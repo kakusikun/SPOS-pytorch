@@ -116,6 +116,7 @@ class Evolution:
             candidate['channel_choices'] = channel_choices
             candidate['flops'] = flops
             candidate['param'] = param
+            self.children.append(candidate)
         # Set target and select
         self.children.sort(key=lambda cand: cand['param'], reverse=find_max_param)
         selected_child = self.children[pick_id]
