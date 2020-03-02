@@ -94,7 +94,7 @@ class SPOS(BaseGraph):
                     channel_choices.append(channel_choice)
         return channel_choices
 
-    def get_channel_masks(self, channel_choices):
+    def get_channel_masks(self, channel_choices, num_gpus):
         """
         candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
         mode: str, "dense" or "sparse". Sparse mode select # channel from candidate scales. Dense mode selects
