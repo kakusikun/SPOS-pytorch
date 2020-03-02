@@ -11,7 +11,7 @@ class Evolution:
         parent_size=5, 
         num_batches=20000,
         mutate_ratio=0.1,  
-        flops_cuts=7,
+        flops_cuts=20,
         children_pick_interval=3, 
         logger=None):
         self.graph = graph
@@ -31,11 +31,11 @@ class Evolution:
             last_conv_out_channel=self.graph.model.last_conv_out_channel,
             channels_layout=cfg.SPOS.CHANNELS_LAYOUT
             )
-        upper_flops, bottom_flops, upper_params, bottom_params = self.set_flops_params_bound()
+        max_flops, min_flops, max_params, min_params = self.set_flops_params_bound()
         # [top to bottom then bottom to top] 
-        self.flops_interval = (upper_flops - bottom_flops) / flops_cuts
-        self.flops_ranges = [max(upper_flops - i * self.flops_interval, 0) for i in range(flops_cuts)] + \
-                            [max(upper_flops - i * self.flops_interval, 0) for i in range(flops_cuts)][::-1]
+        self.flops_interval = (max_flops - min_flops) / flops_cuts
+        self.flops_ranges = [max(max_flops - i * self.flops_interval, 0) for i in range(flops_cuts)] + \
+                            [max(max_flops - i * self.flops_interval, 0) for i in range(flops_cuts)][::-1]
 
         # Use worse children of the good parents
         # If the children are too outstanding, the distribution coverage ratio will be low
@@ -46,9 +46,9 @@ class Evolution:
 
         self.sample_counts = num_batches // len(self.flops_ranges) // len(self.children_pick_ids)
 
-        param_interval = (upper_params - bottom_params) / (len(self.children_pick_ids) - 1)
+        self.param_interval = (max_params - min_params) / (len(self.children_pick_ids) - 1)
         # [top to bottom] 
-        self.param_range = [upper_params - i * param_interval for i in range(len(self.children_pick_ids))]
+        self.param_range = [max_params - i * self.param_interval for i in range(len(self.children_pick_ids))]
 
         self.cur_step = 0
         self.source_choice = {'channel_choices': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -60,7 +60,7 @@ class Evolution:
         if p.is_cuda:
             self.use_gpu = True
 
-    def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, upper_params, bottom_params):
+    def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, max_params, min_params, logger=None):
         '''
         Returns:
             selected_child(dict):
@@ -78,6 +78,8 @@ class Evolution:
             candidate['param'] = param
             self.parents.append(candidate)
 
+        # min/max_flop/param_count
+        min_f_c = max_f_c = 0
         # Breed children
         while len(self.children) < self.children_size:
             candidate = dict()
@@ -109,7 +111,32 @@ class Evolution:
 
             # if flops > max_flop or model_size > upper_params:
             if flops < (max_flops-self.flops_interval) or flops > max_flops \
-                    or param < bottom_params or param > upper_params:
+                    or param < min_params or param > max_params:
+                if flops < (max_flops-self.flops_interval):
+                    min_f_c += 1
+                elif flops > max_flops:
+                    max_f_c += 1
+
+                if min_f_c > 2 * 1e5:
+                    info = f"{max_flops} => "
+                    max_flops -= self.flops_interval
+                    info += f"{max_flops}"
+                    if logger:
+                        logger.info("Max FLOPs Range is adjusted: " + info)
+
+                if max_f_c > 2 * 1e5:
+                    info = f"{max_flops} => "
+                    max_flops += self.flops_interval
+                    info += f"{max_flops}"
+                    if logger:
+                        logger.info("Max FLOPs Range is adjusted: " + info)
+                if logger:
+                    if min_f_c % 10000 == 0:
+                        info = f"After {min_f_c} generations"
+                    if max_f_c % 10000 == 0:
+                        info = f"After {max_f_c} generations"
+                    logger.info(info)
+                    
                 continue
 
             candidate['block_choices'] = block_choices
@@ -157,8 +184,8 @@ class Evolution:
                         pick_id, 
                         find_max_param, 
                         max_flops,
-                        upper_params=self.param_range[range_id],
-                        bottom_params=self.param_range[-1],
+                        max_params=self.param_range[range_id],
+                        min_params=self.param_range[-1],
                     )
                 else:
                     info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
@@ -169,8 +196,8 @@ class Evolution:
                         pick_id, 
                         find_max_param, 
                         max_flops,
-                        upper_params=self.param_range[0],
-                        bottom_params=self.param_range[range_id],
+                        max_params=self.param_range[0],
+                        min_params=self.param_range[range_id],
                     )
                 with lock:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
@@ -180,11 +207,11 @@ class Evolution:
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)
         channel_choices = [9] * sum(self.graph.model.stage_repeats)
-        upper_flops, upper_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
+        max_flops, max_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
         block_choices = [0] * sum(self.graph.model.stage_repeats)
         channel_choices = [0] * sum(self.graph.model.stage_repeats)        
-        bottom_flops, bottom_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
-        return upper_flops * 0.9, bottom_flops, upper_params * 0.9, bottom_params
+        min_flops, min_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
+        return max_flops, min_flops, max_params, min_params
 
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
@@ -220,9 +247,9 @@ if __name__ == "__main__":
 
     if find_max_param:    
         candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
-                                upper_params=evolution.param_range[range_id],
-                                bottom_params=evolution.param_range[-1])
+                                max_params=evolution.param_range[range_id],
+                                min_params=evolution.param_range[-1])
     else:   
         candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
-                                upper_params=evolution.param_range[0],
-                                bottom_params=evolution.param_range[range_id])
+                                max_params=evolution.param_range[0],
+                                min_params=evolution.param_range[range_id])
