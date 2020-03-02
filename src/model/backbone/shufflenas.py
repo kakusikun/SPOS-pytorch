@@ -120,7 +120,8 @@ class ShuffleNasOneShot(nn.Module):
 
 
     def forward(self, x, block_choices, channel_masks):
-        assert len(block_choices) == sum(self.stage_repeats) and len(channel_masks) == sum(self.stage_repeats)
+        assert len(block_choices) == sum(self.stage_repeats) 
+        assert channel_masks.shape[1] == sum(self.stage_repeats)
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
