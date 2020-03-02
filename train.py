@@ -113,7 +113,12 @@ def main():
     loader = LoaderFactory.produce(cfg)
 
     graph = SPOS(cfg)
-    evolution = Evolution(cfg, graph, logger=logger)
+    evolution = Evolution(
+        cfg=cfg,
+        graph=graph,
+        num_batches=len(loader['train']),
+        logger=logger
+    )
 
     graph.use_multigpu()        
     solver = Solver(cfg, graph.model.named_parameters())
