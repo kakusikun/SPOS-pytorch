@@ -119,15 +119,16 @@ class ShuffleNasOneShot(nn.Module):
         )
 
 
-    def forward(self, x, all_block_choice, channel_masks):
-        assert len(all_block_choice) == sum(self.stage_repeats) and len(channel_masks) == sum(self.stage_repeats)
+    def forward(self, x, block_choices, channel_masks):
+        assert len(block_choices) == sum(self.stage_repeats) and len(channel_masks) == sum(self.stage_repeats)
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
-                x = m(x, all_block_choice[block_idx], channel_masks[block_idx])
+                x = m(x, block_choices[block_idx], channel_masks[block_idx])
                 block_idx += 1
             else:
                 x = m(x)
+        assert block_idx == len(block_choices)
         x = self.output(x).view(x.size(0), -1)
         return x
 
@@ -177,6 +178,6 @@ if __name__ == '__main__':
     )
 
     all_channel_mask, choice = model.random_channel_mask(epoch_after_cs=1)
-    all_block_choice = model.random_block_choices()
+    block_choices = model.random_block_choices()
     x = torch.rand(2,3,224,224)
-    _ = model(x, all_block_choice, all_channel_mask)
+    _ = model(x, block_choices, all_channel_mask)

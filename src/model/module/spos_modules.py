@@ -20,12 +20,12 @@ class ChannelSelector(nn.Module):
         super(ChannelSelector, self).__init__()
         self.channel_number = channel_number
 
-    def forward(self, x, block_channel_mask):
-        assert block_channel_mask.dim() == 1
-        block_channel_mask = block_channel_mask[:self.channel_number]
-        c = block_channel_mask.shape[0]
-        block_channel_mask = block_channel_mask.view(1, c, 1, 1)
-        return x * block_channel_mask.expand_as(x)
+    def forward(self, x, channel_mask):
+        assert channel_mask.dim() == 1
+        channel_mask = channel_mask[:self.channel_number]
+        c = channel_mask.shape[0]
+        channel_mask = channel_mask.view(1, c, 1, 1)
+        return x * channel_mask.expand_as(x)
 
 class ShufflenetCS(nn.Module):
     def __init__(self, inp, oup, base_mid_channels, ksize, stride, activation='relu', useSE=False, affine=False):
@@ -87,12 +87,12 @@ class ShufflenetCS(nn.Module):
         else:
             self.branch_proj = None
 
-    def forward(self, old_x, block_channel_mask):
+    def forward(self, old_x, channel_mask):
         if self.stride==1:
             x_proj, x = channel_shuffle(old_x)
             for m in self.branch_main:
                 if isinstance(m, ChannelSelector):
-                    x = m(x, block_channel_mask)
+                    x = m(x, channel_mask)
                 else:
                     x = m(x)
             return torch.cat((x_proj, x), 1)
@@ -101,7 +101,7 @@ class ShufflenetCS(nn.Module):
             x = old_x
             for m in self.branch_main:
                 if isinstance(m, ChannelSelector):
-                    x = m(x, block_channel_mask)
+                    x = m(x, channel_mask)
                 else:
                     x = m(x)
             return torch.cat((self.branch_proj(x_proj), x), 1)
@@ -180,12 +180,12 @@ class ShuffleXceptionCS(nn.Module):
                 branch_proj[-1] = HardSwish()
             self.branch_proj = nn.Sequential(*branch_proj)
 
-    def forward(self, old_x, block_channel_mask):
+    def forward(self, old_x, channel_mask):
         if self.stride==1:
             x_proj, x = channel_shuffle(old_x)
             for m in self.branch_main:
                 if isinstance(m, ChannelSelector):
-                    x = m(x, block_channel_mask)
+                    x = m(x, channel_mask)
                 else:
                     x = m(x)
             return torch.cat((x_proj, x), 1)
@@ -194,7 +194,7 @@ class ShuffleXceptionCS(nn.Module):
             x = old_x
             for m in self.branch_main:
                 if isinstance(m, ChannelSelector):
-                    x = m(x, block_channel_mask)
+                    x = m(x, channel_mask)
                 else:
                     x = m(x)
             return torch.cat((self.branch_proj(x_proj), x), 1)
@@ -267,8 +267,8 @@ class ShuffleNetCSBlock(nn.Module):
                 useSE=use_se,
                 affine=False
             )
-    def forward(self, x, block_channel_mask):
-        return self.block(x, block_channel_mask)
+    def forward(self, x, channel_mask):
+        return self.block(x, channel_mask)
 
 class ShuffleNasBlock(nn.Module):
     def __init__(self, 
@@ -293,16 +293,16 @@ class ShuffleNasBlock(nn.Module):
         self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, max_mid_channel,
                                                 3, stride, 'ShuffleXception', act_name=act_name, use_se=use_se)
 
-    def forward(self, x, block_choice, block_channel_mask):
+    def forward(self, x, block_choice, channel_mask):
         # ShuffleNasBlock has three inputs and passes two inputs to the ShuffleNetCSBlock
         if block_choice == 0:
-            x = self.block_sn_3x3(x, block_channel_mask)
+            x = self.block_sn_3x3(x, channel_mask)
         elif block_choice == 1:
-            x = self.block_sn_5x5(x, block_channel_mask)
+            x = self.block_sn_5x5(x, channel_mask)
         elif block_choice == 2:
-            x = self.block_sn_7x7(x, block_channel_mask)
+            x = self.block_sn_7x7(x, channel_mask)
         elif block_choice == 3:
-            x = self.block_sx_3x3(x, block_channel_mask)
+            x = self.block_sx_3x3(x, channel_mask)
         return x
 
 def make_divisible(x, divisible_by=8):
