@@ -123,6 +123,7 @@ class Evolution:
                     info += f"{max_flops}"
                     if logger:
                         logger.info("Max FLOPs Range is adjusted: " + info)
+                    min_f_c = 0
 
                 if max_f_c > 2 * 1e5:
                     info = f"{max_flops} => "
@@ -130,6 +131,8 @@ class Evolution:
                     info += f"{max_flops}"
                     if logger:
                         logger.info("Max FLOPs Range is adjusted: " + info)
+                    max_f_c = 0
+                    
                 if logger:
                     if min_f_c % 10000 == 0 and min_f_c > 0:
                         logger.info(f"After {min_f_c} generations, candidate FLOPs is too low")
