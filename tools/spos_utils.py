@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from src.tools.flops_utils import get_flops_table, get_flop_params
+from tools.flops_utils import get_flops_table, get_flop_params
 
 class Evolution:
     def __init__(self, 
@@ -68,12 +68,12 @@ class Evolution:
         '''
         # Prepare random parents for the initial evolution
         while len(self.parents) < self.parent_size:
-            all_block_choices = self.graph.model.random_block_choices()
-            all_channel_choices = self.graph.model.random_channel_choices()
-            flops, param = get_flop_params(all_block_choices, all_channel_choices, self.lookup_table)
+            block_choices = self.graph.random_block_choices()
+            channel_choices = self.graph.random_channel_choices()
+            flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
             candidate = dict()
-            candidate['block_choices'] = all_block_choices
-            candidate['channel_choices'] = all_channel_choices
+            candidate['block_choices'] = block_choices
+            candidate['channel_choices'] = channel_choices
             candidate['flops'] = flops
             candidate['param'] = param
             self.parents.append(candidate)
@@ -149,25 +149,21 @@ class Evolution:
             if len(pool) < self.pool_target_size:
                 max_flops, pick_id, range_id, find_max_param = self.get_cur_evolve_state()
                 if find_max_param:
-                    info = "[Evolve Maintainer] max_flops {}, pick_id {}, find_max_param," \
-                           " upper model size {}, bottom model size {}" \
-                        .format(max_flops, pick_id, self.param_range[range_id], self.param_range[-1])
+                    info = f"[Evolution] Find max params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
                     if logger and self.cur_step % self.sample_counts == 0:
-                        logger.debug('[Evolve Maintainer] ' + '-' * 40 + '\n' + info)
+                        logger.info('-' * 40 + '\n' + info)
                     candidate = self.evolve(pick_id, find_max_param, max_flops,
                                             upper_params=self.param_range[range_id],
                                             bottom_params=self.param_range[-1])
                 else:
-                    info = "[Evolve Maintainer] max_flops {}, pick_id {}, find_min_param, " \
-                           "upper model size {}, bottom model size {}" \
-                          .format(max_flops, pick_id, self.param_range[0], self.param_range[range_id])
+                    info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
                     if logger and self.cur_step % self.sample_counts == 0:
-                        logger.debug('[Evolve Maintainer] ' + '-' * 40 + '\n' + info)
+                        logger.info('-' * 40 + '\n' + info)
                     candidate = self.evolve(pick_id, find_max_param, max_flops,
                                             upper_params=self.param_range[0],
                                             bottom_params=self.param_range[range_id])
                 with lock:
-                    candidate['channel_masks'] = self.graph.model.get_channel_mask(candidate['channel_choices'])
+                    candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
     
     def set_flops_params_bound(self):
@@ -182,17 +178,16 @@ class Evolution:
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
 
-def recalc_bn(model, all_block_choices, all_channel_choices, loader, use_gpu, bn_recalc_imgs=20000):
-    model.train()
-    img_cnt = 0
-
-    for _, (img, _) in enumerate(loader):
+def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_imgs=20000):
+    graph.model.train()
+    count = 0
+    for batch in bndata:
         if use_gpu:
-            img = img.cuda()
-        model(img, all_block_choices, all_channel_choices)
+            img = batch['inp'].cuda()
+        graph.model(img, block_choices, channel_masks)
 
-        img_cnt += img.size(0)
-        if img_cnt > bn_recalc_imgs:
+        count += img.size(0)        
+        if count > bn_recalc_imgs:
             break
 
 if __name__ == "__main__":

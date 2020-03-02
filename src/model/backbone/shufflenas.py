@@ -8,6 +8,7 @@ import numpy as np
 
 from src.model.module.spos_modules import HardSwish, ShuffleNasBlock
 from src.model.module.base_module import SEModule
+from tools.spos_utils import make_divisible
 
 class ShuffleNasOneShot(nn.Module):
     def __init__(self,
@@ -18,7 +19,7 @@ class ShuffleNasOneShot(nn.Module):
         candidate_scales=None,
         last_conv_out_channel=1024):
         super(ShuffleNasOneShot, self).__init__()
-
+        self.strides = [2, 2, 2, 1]
         self.stage_repeats = [4, 4, 8, 4]
         self.stage_out_channels = stage_out_channels
         self.candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
@@ -57,7 +58,7 @@ class ShuffleNasOneShot(nn.Module):
                 block_use_se = False
             # create repeated blocks for current stage
             for i in range(numrepeat):
-                stride = 2 if i == 0 else 1
+                stride = self.strides[stage_id] if i == 0 else 1
                 block_id += 1
                 features.extend([
                     ShuffleNasBlock(
@@ -118,16 +119,16 @@ class ShuffleNasOneShot(nn.Module):
         )
 
 
-    def forward(self, x, all_block_choice, all_block_channel_mask):
-        assert len(all_block_choice) == sum(self.stage_repeats) and len(all_block_channel_mask) == sum(self.stage_repeats)
+    def forward(self, x, all_block_choice, channel_masks):
+        assert len(all_block_choice) == sum(self.stage_repeats) and len(channel_masks) == sum(self.stage_repeats)
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
-                x = m(x, all_block_choice[block_idx], all_block_channel_mask[block_idx])
+                x = m(x, all_block_choice[block_idx], channel_masks[block_idx])
                 block_idx += 1
             else:
                 x = m(x)
-        x = self.output(x)
+        x = self.output(x).view(x.size(0), -1)
         return x
 
 

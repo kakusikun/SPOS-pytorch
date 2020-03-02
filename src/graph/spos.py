@@ -1,6 +1,6 @@
 from sys import maxsize
 from src.graph import *
-from src.tools.spos_utils import make_divisible
+from tools.spos_utils import make_divisible
 from src.model.module.loss_module import CrossEntropyLossLS
 import random
 
@@ -94,7 +94,7 @@ class SPOS(BaseGraph):
                     channel_choices.append(channel_choice)
         return channel_choices
 
-    def get_channel_mask(self, channel_choices):
+    def get_channel_masks(self, channel_choices):
         """
         candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
         mode: str, "dense" or "sparse". Sparse mode select # channel from candidate scales. Dense mode selects
@@ -102,7 +102,7 @@ class SPOS(BaseGraph):
         """
         assert len(self.stage_repeats) == len(self.stage_out_channels)
 
-        channel_mask = []
+        channel_masks = []
         global_max_length = make_divisible(int(self.stage_out_channels[-1] // 2 * self.candidate_scales[-1]))
         for i in range(len(self.stage_out_channels)):
             for _ in range(self.stage_repeats[i]):
@@ -114,6 +114,6 @@ class SPOS(BaseGraph):
                 select_channel = make_divisible(select_channel)
                 for j in range(select_channel):
                     local_mask[j] = 1
-            channel_mask.append(local_mask)
-        return torch.Tensor(channel_mask)
+                channel_masks.append(local_mask)
+        return torch.Tensor(channel_masks)
 

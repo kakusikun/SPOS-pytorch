@@ -30,6 +30,7 @@ _C.TRAINER = ""
 _C.TRAIN_TRANSFORM = ""
 _C.TEST_TRANSFORM = ""
 _C.NUM_WORKERS = 16
+_C.EVALUATE_FREQ = 1
 
 # ---------------------------------------------------------------------------- #
 # Misc options
@@ -78,6 +79,7 @@ _C.DB.TRAIN_TRANSFORM = ""
 _C.DB.TEST_TRANSFORM = ""
 _C.DB.LOADER = ""
 _C.DB.NUM_CLASSES = 0
+_C.DB.NUM_KEYPOINTS = 0
 
 # ---------------------------------------------------------------------------- #
 # Solver
@@ -121,7 +123,38 @@ _C.SPOS.USE_SE = True
 _C.SPOS.LAST_CONV_AFTER_POOLING = True
 _C.SPOS.CHANNELS_LAYOUT = "OneShot"
 
+# -----------------------------------------------------------------------------
+# FACEID
+# -----------------------------------------------------------------------------
+_C.FACEID = CN()
+_C.FACEID.SIZE_PROBE = 5
+_C.FACEID.LFW_PAIRSFILE_PATH = ""
+_C.FACEID.PROBE_PATH = ""
+_C.FACEID.GALLERY_PATH = ""
+_C.FACEID.PROBE_TYPE = ""
+_C.FACEID.GALLERY_TYPE = ""
 
+# -----------------------------------------------------------------------------
+# REID
+# -----------------------------------------------------------------------------
+_C.REID = CN()
+_C.REID.SIZE_PERSON = 4
+_C.REID.CYCLE = 30
+_C.REID.MERGE = False
+_C.REID.TRT = ""
+
+# -----------------------------------------------------------------------------
+# Pedestrian Attribute Recognition
+# -----------------------------------------------------------------------------
+_C.PAR = CN()
+_C.PAR.SELECT_CAT = -1
+_C.PAR.IGNORE_CAT = []
+
+# -----------------------------------------------------------------------------
+# Pedestrian Attribute Recognition
+# -----------------------------------------------------------------------------
+_C.COCO = CN()
+_C.COCO.TARGET = 'original'
 
 
 def build_output(cfg, config_file=""):

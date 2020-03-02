@@ -1,4 +1,5 @@
 from src.database.data import *
+import os
 import os.path as osp
 
 class Emotion(BaseData):
