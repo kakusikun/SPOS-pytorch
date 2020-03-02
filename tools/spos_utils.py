@@ -190,7 +190,7 @@ class Evolution:
         block_choices = [0] * sum(self.graph.model.stage_repeats)
         channel_choices = [0] * sum(self.graph.model.stage_repeats)        
         bottom_flops, bottom_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
-        return upper_flops*0.5, bottom_flops, upper_params*0.5, bottom_params
+        return upper_flops * 0.9, bottom_flops, upper_params * 0.9, bottom_params
 
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
@@ -209,30 +209,26 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
 
 if __name__ == "__main__":
     import torch
-    from config.config_factory import _C as cfg
-    from src.model.backbone.shufflenas import shufflenas_oneshot
+    from src.factory.config_factory import _C as cfg
+    from src.graph.spos import SPOS
 
-    cfg.INPUT.RESIZE = (224,224)
+    cfg.INPUT.RESIZE = (112, 112)
     cfg.DB.NUM_CLASSES = 10
     cfg.SPOS.USE_SE = True
     cfg.SPOS.LAST_CONV_AFTER_POOLING = True
     cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
 
-    model = shufflenas_oneshot(
-        n_class=10,
-        use_se=True,
-        last_conv_after_pooling=True,
-        channels_layout='OneShot')
+    graph = SPOS(cfg)
 
-    darwin = Evolution(cfg, model)
+    evolution = Evolution(cfg, graph)
 
-    max_flops, pick_id, range_id, find_max_param = darwin.get_cur_evolve_state()
+    max_flops, pick_id, range_id, find_max_param = evolution.get_cur_evolve_state()
 
     if find_max_param:    
-        candidate = darwin.evolve(pick_id, find_max_param, max_flops,
-                                upper_params=darwin.param_range[range_id],
-                                bottom_params=darwin.param_range[-1])
+        candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
+                                upper_params=evolution.param_range[range_id],
+                                bottom_params=evolution.param_range[-1])
     else:   
-        candidate = darwin.evolve(pick_id, find_max_param, max_flops,
-                                upper_params=darwin.param_range[0],
-                                bottom_params=darwin.param_range[range_id])
+        candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
+                                upper_params=evolution.param_range[0],
+                                bottom_params=evolution.param_range[range_id])
