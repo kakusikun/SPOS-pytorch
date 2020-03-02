@@ -138,7 +138,7 @@ def main():
             best_accu = test_accu
             logger.info(f"Epoch [{epoch:03}]   Best Accuracy [{best_accu:3.3f}]")
 
-        graph.save(graph.save_path, graph.model, solvers=[solver], epoch=epoch, metric=test_accu)
+        graph.save(graph.save_path, graph.model, solvers={'main': solver}, epoch=epoch, metric=test_accu)
 
 
     
