@@ -118,17 +118,17 @@ class Evolution:
                     max_f_c += 1
 
                 if min_f_c > 2 * 1e6:
-                    info = f"{max_flops} => "
+                    info = f"{max_flops:.2f} => "
                     max_flops -= self.flops_interval
-                    info += f"{max_flops}"
+                    info += f"{max_flops:.2f}"
                     if logger:
                         logger.info("Candidate FLOPs is too low, Max FLOPs Range is adjusted: " + info)
                     min_f_c = 0
 
                 if max_f_c > 2 * 1e6:
-                    info = f"{max_flops} => "
+                    info = f"{max_flops:.2f} => "
                     max_flops += self.flops_interval
-                    info += f"{max_flops}"
+                    info += f"{max_flops:.2f}"
                     if logger:
                         logger.info("Candidate FLOPs is too high, Max FLOPs Range is adjusted: " + info)
                     max_f_c = 0                    
