@@ -186,6 +186,7 @@ class Evolution:
                         max_flops,
                         max_params=self.param_range[range_id],
                         min_params=self.param_range[-1],
+                        logger=logger
                     )
                 else:
                     info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
@@ -198,6 +199,7 @@ class Evolution:
                         max_flops,
                         max_params=self.param_range[0],
                         min_params=self.param_range[range_id],
+                        logger=logger
                     )
                 with lock:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
