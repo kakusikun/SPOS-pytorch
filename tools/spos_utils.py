@@ -60,7 +60,7 @@ class Evolution:
         if p.is_cuda:
             self.use_gpu = True
 
-    def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, upper_params, bottom_params, logger=None):
+    def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, upper_params, bottom_params):
         '''
         Returns:
             selected_child(dict):
@@ -78,7 +78,6 @@ class Evolution:
             candidate['param'] = param
             self.parents.append(candidate)
 
-        generation = 0.0
         # Breed children
         while len(self.children) < self.children_size:
             candidate = dict()
@@ -117,10 +116,6 @@ class Evolution:
             candidate['channel_choices'] = channel_choices
             candidate['flops'] = flops
             candidate['param'] = param
-            generation += 1
-            self.children.append(candidate)
-            if logger:
-                logger.info(f"Get child after {generation} generations")
         # Set target and select
         self.children.sort(key=lambda cand: cand['param'], reverse=find_max_param)
         selected_child = self.children[pick_id]
@@ -163,7 +158,6 @@ class Evolution:
                         max_flops,
                         upper_params=self.param_range[range_id],
                         bottom_params=self.param_range[-1],
-                        logger=logger
                     )
                 else:
                     info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
@@ -176,7 +170,6 @@ class Evolution:
                         max_flops,
                         upper_params=self.param_range[0],
                         bottom_params=self.param_range[range_id],
-                        logger=logger
                     )
                 with lock:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
