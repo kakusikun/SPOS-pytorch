@@ -117,28 +117,21 @@ class Evolution:
                 elif flops > max_flops:
                     max_f_c += 1
 
-                if min_f_c > 2 * 1e5:
+                if min_f_c > 2 * 1e6:
                     info = f"{max_flops} => "
                     max_flops -= self.flops_interval
                     info += f"{max_flops}"
                     if logger:
-                        logger.info("Max FLOPs Range is adjusted: " + info)
+                        logger.info("Candidate FLOPs is too low, Max FLOPs Range is adjusted: " + info)
                     min_f_c = 0
 
-                if max_f_c > 2 * 1e5:
+                if max_f_c > 2 * 1e6:
                     info = f"{max_flops} => "
                     max_flops += self.flops_interval
                     info += f"{max_flops}"
                     if logger:
-                        logger.info("Max FLOPs Range is adjusted: " + info)
-                    max_f_c = 0
-                    
-                if logger:
-                    if min_f_c % 10000 == 0 and min_f_c > 0:
-                        logger.info(f"After {min_f_c} generations, candidate FLOPs is too low")
-                    if max_f_c % 10000 == 0 and max_f_c > 0:
-                        logger.info(f"After {max_f_c} generations, candidate FLOPs is too high")
-                    
+                        logger.info("Candidate FLOPs is too high, Max FLOPs Range is adjusted: " + info)
+                    max_f_c = 0                    
                 continue
 
             candidate['block_choices'] = block_choices
