@@ -115,5 +115,6 @@ class SPOS(BaseGraph):
                 for j in range(select_channel):
                     local_mask[j] = 1
                 channel_masks.append(local_mask)
-        return torch.Tensor(channel_masks)
+                
+        return torch.Tensor(channel_masks).expand(len(self.cfg.MODEL.GPU), sum(self.stage_repeats), global_max_length)
 
