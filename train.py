@@ -78,9 +78,9 @@ def train_once(logger, epoch, graph, tdata, solver, pool=None, pool_lock=None, s
 def test_once(logger, epoch, graph, vdata, bndata):
     block_choices = graph.random_block_choices()
     channel_choices = graph.random_channel_choices()
-    channel_masks = graph.get_channel_masks(block_choices)
+    channel_masks = graph.get_channel_masks(channel_choices)
     raw_model_state = deepcopy(graph.model.state_dict())
-    recalc_bn(graph, block_choices, channel_choices, bndata, True)
+    recalc_bn(graph, block_choices, channel_masks, bndata, True)
     graph.model.eval()
     accus = []
     for batch in vdata:
@@ -113,11 +113,10 @@ def main():
     loader = LoaderFactory.produce(cfg)
 
     graph = SPOS(cfg)
-    graph.use_multigpu()
-        
-    solver = Solver(cfg, graph.model.named_parameters())
-
     evolution = Evolution(cfg, graph, logger=logger)
+
+    graph.use_multigpu()        
+    solver = Solver(cfg, graph.model.named_parameters())
 
     manager = multiprocessing.Manager()
     cand_pool = manager.list()
@@ -129,7 +128,7 @@ def main():
 
         finished = Value(c_bool, False)
         pool_process = multiprocessing.Process(target=evolution.maintain,
-                                        args=[cand_pool, lock, finished, logger])
+                                        args=[epoch - cfg.SPOS.EPOCH_TO_CS, cand_pool, lock, finished, logger])
         pool_process.start()
         train_once(logger, epoch, graph, loader['train'], solver, pool=cand_pool, pool_lock=lock, shared_finished_flag=finished)
         pool_process.join()

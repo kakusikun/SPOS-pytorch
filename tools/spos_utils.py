@@ -60,7 +60,7 @@ class Evolution:
         if p.is_cuda:
             self.use_gpu = True
 
-    def evolve(self, pick_id, find_max_param, max_flops, upper_params, bottom_params):
+    def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, upper_params, bottom_params, logger=None):
         '''
         Returns:
             selected_child(dict):
@@ -69,7 +69,7 @@ class Evolution:
         # Prepare random parents for the initial evolution
         while len(self.parents) < self.parent_size:
             block_choices = self.graph.random_block_choices()
-            channel_choices = self.graph.random_channel_choices()
+            channel_choices = self.graph.random_channel_choices(epoch_after_cs)
             flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
             candidate = dict()
             candidate['block_choices'] = block_choices
@@ -78,6 +78,7 @@ class Evolution:
             candidate['param'] = param
             self.parents.append(candidate)
 
+        generation = 0.0
         # Breed children
         while len(self.children) < self.children_size:
             candidate = dict()
@@ -116,7 +117,10 @@ class Evolution:
             candidate['channel_choices'] = channel_choices
             candidate['flops'] = flops
             candidate['param'] = param
+            generation += 1
             self.children.append(candidate)
+            if logger:
+                logger.info(f"Get child after {generation} generations")
         # Set target and select
         self.children.sort(key=lambda cand: cand['param'], reverse=find_max_param)
         selected_child = self.children[pick_id]
@@ -144,7 +148,7 @@ class Evolution:
             find_max_param = True
         return self.flops_ranges[i], self.children_pick_ids[j], range_id, find_max_param
 
-    def maintain(self, pool, lock, finished_flag, logger=None):
+    def maintain(self, epoch_after_cs, pool, lock, finished_flag, logger=None):
         while not finished_flag.value:
             if len(pool) < self.pool_target_size:
                 max_flops, pick_id, range_id, find_max_param = self.get_cur_evolve_state()
@@ -152,19 +156,32 @@ class Evolution:
                     info = f"[Evolution] Find max params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
                     if logger and self.cur_step % self.sample_counts == 0:
                         logger.info('-' * 40 + '\n' + info)
-                    candidate = self.evolve(pick_id, find_max_param, max_flops,
-                                            upper_params=self.param_range[range_id],
-                                            bottom_params=self.param_range[-1])
+                    candidate = self.evolve(
+                        epoch_after_cs,
+                        pick_id, 
+                        find_max_param, 
+                        max_flops,
+                        upper_params=self.param_range[range_id],
+                        bottom_params=self.param_range[-1],
+                        logger=logger
+                    )
                 else:
                     info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
                     if logger and self.cur_step % self.sample_counts == 0:
                         logger.info('-' * 40 + '\n' + info)
-                    candidate = self.evolve(pick_id, find_max_param, max_flops,
-                                            upper_params=self.param_range[0],
-                                            bottom_params=self.param_range[range_id])
+                    candidate = self.evolve(
+                        epoch_after_cs,
+                        pick_id, 
+                        find_max_param, 
+                        max_flops,
+                        upper_params=self.param_range[0],
+                        bottom_params=self.param_range[range_id],
+                        logger=logger
+                    )
                 with lock:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
+        logger.info("[Evolution] Ends")
     
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)

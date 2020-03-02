@@ -125,7 +125,7 @@ class ShuffleNasOneShot(nn.Module):
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
-                x = m(x, block_choices[block_idx], channel_masks.unsqueeze()[block_idx])
+                x = m(x, block_choices[block_idx], channel_masks.squeeze()[block_idx])
                 block_idx += 1
             else:
                 x = m(x)
