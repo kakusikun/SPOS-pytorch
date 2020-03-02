@@ -11,7 +11,7 @@ class Evolution:
         parent_size=5, 
         num_batches=20000,
         mutate_ratio=0.1,  
-        flops_cuts=20,
+        flops_cuts=10,
         children_pick_interval=3, 
         logger=None):
         self.graph = graph
@@ -131,10 +131,10 @@ class Evolution:
                     if logger:
                         logger.info("Max FLOPs Range is adjusted: " + info)
                 if logger:
-                    if min_f_c % 10000 == 0:
-                        info = f"After {min_f_c} generations"
-                    if max_f_c % 10000 == 0:
-                        info = f"After {max_f_c} generations"
+                    if min_f_c % 10000 == 0 and min_f_c > 0:
+                        info = f"After {min_f_c} generations, candidate FLOPs is too low"
+                    if max_f_c % 10000 == 0 and max_f_c > 0:
+                        info = f"After {max_f_c} generations, candidate FLOPs is too high"
                     logger.info(info)
                     
                 continue
