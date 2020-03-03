@@ -25,6 +25,8 @@ class ChannelSelector(nn.Module):
         channel_mask = channel_mask[:self.channel_number]
         c = channel_mask.shape[0]
         channel_mask = channel_mask.view(1, c, 1, 1)
+        if x.is_cuda:
+            channel_mask = channel_mask.cuda()
         return x * channel_mask.expand_as(x)
 
 class ShufflenetCS(nn.Module):
