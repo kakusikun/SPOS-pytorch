@@ -120,7 +120,7 @@ class Evolution:
                     max_f_c += 1
 
                 duration = (time.time() - start) // 60
-                if duration > 15: # cost too much time in evolution
+                if duration > 10: # cost too much time in evolution
                     if min_f_c > max_f_c:
                         info = f"{max_flops:.2f} => "
                         max_flops -= self.flops_interval
@@ -136,7 +136,10 @@ class Evolution:
                         if logger:
                             logger.info("Max FLOPs is too small, adjusted: " + info)
                         max_f_c = 0
-                    start = time.time()           
+                    start = time.time()    
+                else:
+                    info = ". " * int(duration)
+                    logger.info("\r" + info)
                 continue
 
             candidate['block_choices'] = block_choices
