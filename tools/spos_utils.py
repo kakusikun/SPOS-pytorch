@@ -135,7 +135,8 @@ class Evolution:
                         info += f"{max_flops:.2f}"
                         if logger:
                             logger.info("Max FLOPs is too small, adjusted: " + info)
-                        max_f_c = 0                    
+                        max_f_c = 0
+                    start = time.time()           
                 continue
 
             candidate['block_choices'] = block_choices
