@@ -1,4 +1,5 @@
 import random
+import time
 import numpy as np
 from tools.flops_utils import get_flops_table, get_flop_params
 
@@ -81,6 +82,7 @@ class Evolution:
         # min/max_flop/param_count
         min_f_c = max_f_c = 0
         # Breed children
+        start = time.time()
         while len(self.children) < self.children_size:
             candidate = dict()
             # randomly select parents from current pool
@@ -117,21 +119,23 @@ class Evolution:
                 elif flops > max_flops:
                     max_f_c += 1
 
-                if min_f_c > 400000:
-                    info = f"{max_flops:.2f} => "
-                    max_flops -= self.flops_interval
-                    info += f"{max_flops:.2f}"
-                    if logger:
-                        logger.info("Candidate FLOPs is too low, Max FLOPs Range is adjusted: " + info)
-                    min_f_c = 0
+                duration = (time.time() - start) // 60
+                if duration > 15: # cost too much time in evolution
+                    if min_f_c > max_f_c:
+                        info = f"{max_flops:.2f} => "
+                        max_flops -= self.flops_interval
+                        info += f"{max_flops:.2f}"
+                        if logger:
+                            logger.info("Max FLOPs is too large, adjusted: " + info)
+                        min_f_c = 0
 
-                if max_f_c > 400000:
-                    info = f"{max_flops:.2f} => "
-                    max_flops += self.flops_interval
-                    info += f"{max_flops:.2f}"
-                    if logger:
-                        logger.info("Candidate FLOPs is too high, Max FLOPs Range is adjusted: " + info)
-                    max_f_c = 0                    
+                    if max_f_c > min_f_c:
+                        info = f"{max_flops:.2f} => "
+                        max_flops += self.flops_interval
+                        info += f"{max_flops:.2f}"
+                        if logger:
+                            logger.info("Max FLOPs is too small, adjusted: " + info)
+                        max_f_c = 0                    
                 continue
 
             candidate['block_choices'] = block_choices
