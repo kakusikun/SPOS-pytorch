@@ -54,8 +54,8 @@ class Evolution:
         self.cur_step = 0
         self.source_choice = {'channel_choices': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                             'block_choices': [0, 1, 2, 3]}
-
-
+        
+        self.bad_generations = {}
 
         p = next(iter(self.graph.model.parameters()))
         if p.is_cuda:
@@ -68,6 +68,12 @@ class Evolution:
                 a candidate that 
         '''
         # Prepare random parents for the initial evolution
+        generation = (find_max_param, max_flops, max_params, min_params)
+        if generation in self.bad_generations:
+            find_max_param, max_flops, max_params, min_params = self.bad_generations[generation]
+            if logger:
+                logger.info("Using historical generation")
+
         while len(self.parents) < self.parent_size:
             block_choices = self.graph.random_block_choices()
             channel_choices = self.graph.random_channel_choices(epoch_after_cs)
@@ -82,8 +88,9 @@ class Evolution:
         # min/max_flop/param_count
         min_f_c = max_f_c = 0
         # Breed children
-        start = time.time()
+        duration = 0.0
         while len(self.children) < self.children_size:
+            start = time.time()
             candidate = dict()
             # randomly select parents from current pool
             mother = random.choice(self.parents)
@@ -105,8 +112,8 @@ class Evolution:
             channel_choices = [0] * len(father['channel_choices'])
             for i in range(len(channel_choices)):
                 channel_choices[i] = random.choice([mother['channel_choices'][i], father['channel_choices'][i]])
-                # Mutation: randomly mutate some of the children.
-                if random.random() < self.mutate_ratio:
+                # Mutation: randomly mutate some of the children after all channel is warming up.
+                if random.random() < self.mutate_ratio and epoch_after_cs > 0:
                     channel_choices[i] = random.choice(self.source_choice['channel_choices'])
 
             flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
@@ -119,8 +126,9 @@ class Evolution:
                 elif flops > max_flops:
                     max_f_c += 1
 
-                duration = time.time() - start
-                if duration // 60 > 5: # cost too much time in evolution
+                duration += time.time() - start
+                if duration // 60 > 4: # cost too much time in evolution
+                    orig_max_flops = max_flops
                     if min_f_c > max_f_c:
                         info = f"{max_flops:.2f} => "
                         max_flops -= self.flops_interval
@@ -136,7 +144,9 @@ class Evolution:
                         if logger:
                             logger.info("Max FLOPs is too small, adjusted: " + info)
                         max_f_c = 0
-                    start = time.time()    
+                    duration = 0.0
+                    self.bad_generations[(find_max_param, orig_max_flops, max_params, min_params)] = (find_max_param, max_flops, max_params, min_params)
+                start = time.time()    
                 print(f"\r Evolving {int(duration)}s", end = '')
                 continue
 
