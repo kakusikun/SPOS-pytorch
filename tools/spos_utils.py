@@ -1,7 +1,15 @@
+import os
 import random
 import time
 import numpy as np
+from copy import deepcopy
 from tools.flops_utils import get_flops_table, get_flop_params
+
+CHOICE = {
+    'channel': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    'block': [0, 1, 2, 3]
+}
+
 
 class Evolution:
     def __init__(self, 
@@ -12,7 +20,7 @@ class Evolution:
         parent_size=5, 
         num_batches=20000,
         mutate_ratio=0.1,  
-        flops_cuts=10,
+        flops_cuts=7,
         children_pick_interval=3, 
         logger=None):
         self.cfg = cfg
@@ -56,11 +64,14 @@ class Evolution:
         self.source_choice = {'channel_choices': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                             'block_choices': [0, 1, 2, 3]}
         
-        self.bad_generations = []
-
         p = next(iter(self.graph.model.parameters()))
         if p.is_cuda:
             self.use_gpu = True
+
+        #TODO: record historical bad generations
+        root = os.getcwd()
+        self.save_bad_generation_paath = os.path.join(root, 'external/historical_bad_generations.json')
+        self.bad_generations = []
 
     def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, max_params, min_params, logger=None):
         '''
@@ -212,15 +223,249 @@ class Evolution:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
         logger.info("[Evolution] Ends")
-    
+        root = os.getcwd()
+        with open(os.path.join(root, 'external/OneShot_flops.json'), 'w') as f:
+            json.dump(lookup_table, f)
+
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)
-        channel_choices = [9] * sum(self.graph.model.stage_repeats)
+        channel_choices = [7] * sum(self.graph.model.stage_repeats)
         max_flops, max_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
         block_choices = [0] * sum(self.graph.model.stage_repeats)
-        channel_choices = [0] * sum(self.graph.model.stage_repeats)        
+        channel_choices = [3] * sum(self.graph.model.stage_repeats)        
         min_flops, min_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
         return max_flops, min_flops, max_params, min_params
+
+class SearchEvolution:
+    def __init__(self, 
+        cfg, 
+        graph, 
+        vdata,
+        bndata,
+        search_iters=50,
+        population_size=500, 
+        retain_length=100, 
+        random_select=0.1, 
+        mutate_chance=0.1,
+        logger=None):
+        self.cfg = cfg
+        self.graph = graph
+        self.vdata = vdata
+        self.bndata = bndata
+        self.search_iters = search_iters
+        self.population_size = population_size
+        self.retain_length = retain_length
+        self.random_select = random_select
+        self.mutate_chance = mutate_chance
+        self.logger = logger
+
+        self.lookup_table = get_flops_table(
+            input_size=cfg.INPUT.RESIZE[0],
+            n_class=cfg.DB.NUM_CLASSES,
+            use_se=cfg.SPOS.USE_SE, 
+            last_conv_after_pooling=cfg.SPOS.LAST_CONV_AFTER_POOLING,
+            last_conv_out_channel=self.graph.model.last_conv_out_channel,
+            channels_layout=cfg.SPOS.CHANNELS_LAYOUT
+            )
+
+    def build_population(self):
+        population = []
+        start = time.time()
+        while len(population) < self.population_size:
+            block_choices = self.graph.random_block_choices()
+            channel_choices = self.graph.random_channel_choices()
+            channel_masks = self.graph.get_channel_masks(channel_choices)
+            acc = self._get_choice_accuracy(block_choices, channel_masks)
+            flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
+            instance = {}
+            instance['block'] = block_choices
+            instance['channel'] = channel_choices
+            instance['flops'] = flops
+            instance['param'] = param
+            instance['acc'] = acc
+            population.append(instance)
+            print("\r Building Population" + f"{int(time.time()-start)}s", end='')
+        if self.logger:
+            self.logger.info("Population Built")
+        return population
+
+    def _get_choice_accuracy(self, block_choices, channel_masks):
+        recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True)
+        self.graph.model.eval()
+        accus = []
+        for batch in self.vdata:
+            with torch.no_grad():
+                for key in batch:
+                    batch[key] = batch[key].cuda()
+                outputs = self.graph.model(batch['inp'], block_choices, channel_masks)
+            accus.append((outputs.max(1)[1] == batch['target']).float().mean())
+        accu = tensor_to_scalar(torch.stack(accus).mean())
+        return accu
+
+    def born(self, father, mother):
+        children = []
+        for _ in range(2):
+            child = {}
+            child['block'] = self.crossover_mutate(father['block'], mother['block'], CHOICE['block'], self.mutate_chance)
+            child['channel'] = self.crossover_mutate(father['channel'], mother['channel'], CHOICE['channel'], self.mutate_chance)
+            children.append(child)
+        return children
+
+    def evolve(self, population, leader_board):
+        for instance in population:
+            if 'acc' not in instance:
+                channel_masks = self.graph.get_channel_masks(instance['channel'])
+                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                instance['acc'] = acc
+                temp = (
+                    1 - deepcopy(instance['acc']), 
+                    deepcopy(instance['block']),
+                    deepcopy(instance['channel']),
+                    deepcopy(instance['flops']),
+                    deepcopy(instance['param']),
+                )
+                leader_board.push(temp)
+        
+        population.sort(key=lambda x: x['acc'], reverse=True)
+        parents = population[:self.retain_length]
+        for instance in population[self.retain_length:]:
+            if self.random_select > random.random():
+                parents.append(instance)
+
+        # Now find out how many spots we have left to fill.
+        parents_length = len(parents)
+        desired_length = len(population) - parents_length
+        children_to_be_grown = []
+
+        start = time.time()
+        # Add children, which are bred from two remaining networks.
+        while len(children_to_be_grown) < desired_length:
+
+            # Get a random mom and dad.
+            father = random.randint(0, parents_length-1)
+            mother = random.randint(0, parents_length-1)
+
+            # Assuming they aren't the same network...
+            if father != mother:
+                father = parents[father]
+                mother = parents[mother]
+
+                # Breed them.
+                children = self.born(father, mother)
+
+                # Add the children one at a time.
+                for child in children:
+                    # Don't grow larger than desired length.
+                    if len(children_to_be_grown) >= desired_length:
+                        break
+                    flops, param = get_flop_params(child['block'], child['channel'], self.lookup_table)
+                    child['flops'] = flops
+                    child['param'] = param
+                    children_to_be_grown.append(child)
+            print("\r Evolving" + f"{int(time.time()-start)}s", end='')
+
+        if self.logger:
+            self.logger.info("Population Evolved")
+
+        parents.extend(children_to_be_grown)
+        return parents
+
+    def evolve_paper(self, population, leader_board):
+        for instance in population:
+            if 'acc' not in instance:
+                channel_masks = self.graph.get_channel_masks(instance['channel'])
+                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                instance['acc'] = acc
+                temp = {}
+                for attr in instance:
+                    temp[attr] = deepcopy(instance[attr])
+                leader_board.push(temp)
+        topk = lea
+        population.sort(key=lambda x: x['acc'], reverse=True)
+        parents = population[:self.retain_length]
+        for instance in population[self.retain_length:]:
+            if self.random_select > random.random():
+                parents.append(instance)
+
+        # Now find out how many spots we have left to fill.
+        parents_length = len(parents)
+        desired_length = len(population) - parents_length
+        children_to_be_grown = []
+
+        start = time.time()
+        # Add children, which are bred from two remaining networks.
+        while len(children_to_be_grown) < desired_length:
+
+            # Get a random mom and dad.
+            father = random.randint(0, parents_length-1)
+            mother = random.randint(0, parents_length-1)
+
+            # Assuming they aren't the same network...
+            if father != mother:
+                father = parents[father]
+                mother = parents[mother]
+
+                # Breed them.
+                children = self.born(father, mother)
+
+                # Add the children one at a time.
+                for child in children:
+                    # Don't grow larger than desired length.
+                    if len(children_to_be_grown) >= desired_length:
+                        break
+                    flops, param = get_flop_params(child['block'], child['channel'], self.lookup_table)
+                    child['flops'] = flops
+                    child['param'] = param
+                    children_to_be_grown.append(child)
+            print("\r Evolving" + f"{int(time.time()-start)}s", end='')
+
+        if self.logger:
+            self.logger.info("Population Evolved")
+
+        parents.extend(children_to_be_grown)
+        return parents
+
+
+    def mass_crossover(self, sub_population):
+        children = []
+        desired_length = len(sub_population)
+        while len(children) < desired_length:
+            father = random.randint(0, desired_length-1)
+            mother = random.randint(0, desired_length-1)
+            # Assuming they aren't the same network...
+            if father != mother:
+                father = sub_population[father]
+                mother = sub_population[mother]
+                child = {}
+                child['block'] = self.crossover_mutate(father['block'], mother['block'], CHOICE['block'], -1)
+                child['channel'] = self.crossover_mutate(father['channel'], mother['channel'], CHOICE['channel'], -1)
+                flops, param = get_flop_params(child['block'], child['channel'], self.lookup_table)
+                child['flops'] = flops
+                child['param'] = param
+            children.append(child)
+        return children
+
+    def mass_mutation(self, sub_population):
+        alien = []
+        desired_length = len(sub_population)
+        while len(alien) < desired_length:
+            instance = sub_population[random.randint(0, desired_length-1)]
+            instance['block'] = self.crossover_mutate(instance['block'], instance['block'], CHOICE['block'], self.mutate_chance)
+            instance['channel'] = self.crossover_mutate(instance['channel'], instance['channel'], CHOICE['channel'], self.mutate_chance)
+            flops, param = get_flop_params(instance['block'], instance['channel'], self.lookup_table)
+            instance['flops'] = flops
+            instance['param'] = param
+            alien.append(instance)
+        return alien
+
+    @staticmethod
+    def crossover_mutate(a, b, choices, prob):
+        c = [0] * len(a)
+        for i in range(len(a)):
+            c[i] = random.choice([b[i], a[i]])
+            if prob > random.random():
+                c[i] = random.choice(choices)
+        return c
 
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
@@ -237,6 +482,24 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
         if count > bn_recalc_imgs:
             break
 
+def tensor_to_scalar(tensor):
+    if isinstance(tensor, list):
+        scalar = []
+        for _tensor in tensor:
+            scalar.append(_tensor.item())
+    elif isinstance(tensor, dict):
+        scalar = {}
+        for _tensor in tensor:
+            scalar[_tensor] = tensor[_tensor].item()
+    elif isinstance(tensor, torch.Tensor) and tensor.dim() != 0:
+        if tensor.is_cuda:
+            scalar = tensor.cpu().detach().numpy().tolist()
+        else:
+            scalar = tensor.detach().numpy().tolist()
+    else:
+        scalar = tensor.item()
+    return scalar
+
 if __name__ == "__main__":
     import torch
     from src.factory.config_factory import _C as cfg
@@ -247,7 +510,7 @@ if __name__ == "__main__":
     cfg.SPOS.USE_SE = True
     cfg.SPOS.LAST_CONV_AFTER_POOLING = True
     cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
-
+    cfg.SPOS.DURATION = 5
     graph = SPOS(cfg)
 
     evolution = Evolution(cfg, graph)
@@ -255,10 +518,10 @@ if __name__ == "__main__":
     max_flops, pick_id, range_id, find_max_param = evolution.get_cur_evolve_state()
 
     if find_max_param:    
-        candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[range_id],
                                 min_params=evolution.param_range[-1])
     else:   
-        candidate = evolution.evolve(0 - cfg.SPOS.EPOCH_TO_CS, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[0],
                                 min_params=evolution.param_range[range_id])
