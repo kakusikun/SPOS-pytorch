@@ -117,7 +117,7 @@ class Evolution:
                 elif flops > max_flops:
                     max_f_c += 1
 
-                if min_f_c > 2 * 1e6:
+                if min_f_c > 400000:
                     info = f"{max_flops:.2f} => "
                     max_flops -= self.flops_interval
                     info += f"{max_flops:.2f}"
@@ -125,7 +125,7 @@ class Evolution:
                         logger.info("Candidate FLOPs is too low, Max FLOPs Range is adjusted: " + info)
                     min_f_c = 0
 
-                if max_f_c > 2 * 1e6:
+                if max_f_c > 400000:
                     info = f"{max_flops:.2f} => "
                     max_flops += self.flops_interval
                     info += f"{max_flops:.2f}"
