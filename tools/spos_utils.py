@@ -15,6 +15,7 @@ class Evolution:
         flops_cuts=10,
         children_pick_interval=3, 
         logger=None):
+        self.cfg = cfg
         self.graph = graph
         self.pool_target_size = pool_target_size
         self.children_size = children_size
@@ -118,7 +119,7 @@ class Evolution:
                 if flops < (max_flops-self.flops_interval) or flops > max_flops \
                         or param < min_params or param > max_params:
                     duration += time.time() - start
-                    if duration // 60 > 4: # cost too much time in evolution
+                    if duration // 60 > (self.cfg.SPOS.DURATION - 1): # cost too much time in evolution
                         if logger:
                             logger.info("Give up this generation for wasting too much time")
                         self.bad_generations.append(generation)
@@ -177,7 +178,7 @@ class Evolution:
                 max_flops, pick_id, range_id, find_max_param = self.get_cur_evolve_state()
                 if find_max_param:
                     info = f"[Evolution] Find max params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
-                    if logger and self.cur_step % self.sample_counts == 0:
+                    if logger and self.cur_step % self.sample_counts == 0 and epoch_after_cs > 0:
                         logger.info('-' * 40 + '\n' + info)
                     candidate = self.evolve(
                         epoch_after_cs,
@@ -190,7 +191,7 @@ class Evolution:
                     )
                 else:
                     info = f"[Evolution] Find min params   Max Flops [{max_flops:.2f}]   Child Pick ID [{pick_id}]   Upper model size [{self.param_range[range_id]:.2f}]   Bottom model size [{self.param_range[-1]:.2f}]" 
-                    if logger and self.cur_step % self.sample_counts == 0:
+                    if logger and self.cur_step % self.sample_counts == 0 and epoch_after_cs > 0:
                         logger.info('-' * 40 + '\n' + info)
                     candidate = self.evolve(
                         epoch_after_cs,

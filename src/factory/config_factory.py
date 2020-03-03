@@ -123,7 +123,7 @@ _C.SPOS.EPOCH_TO_CS = 60
 _C.SPOS.USE_SE = True
 _C.SPOS.LAST_CONV_AFTER_POOLING = True
 _C.SPOS.CHANNELS_LAYOUT = "OneShot"
-
+_C.SPOS.DURATION = 4 # in minute
 # -----------------------------------------------------------------------------
 # FACEID
 # -----------------------------------------------------------------------------
