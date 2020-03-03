@@ -69,8 +69,9 @@ class Evolution:
                 a candidate that 
         '''
         generation = find_max_param, max_flops, max_params, min_params
-        if generation in self.bad_generations:
+        while generation in self.bad_generations:
             pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution() 
+            generation = find_max_param, max_flops, max_params, min_params
         # Prepare random parents for the initial evolution
         while len(self.parents) < self.parent_size:
             block_choices = self.graph.random_block_choices()
@@ -119,11 +120,16 @@ class Evolution:
                 if flops < (max_flops-self.flops_interval) or flops > max_flops \
                         or param < min_params or param > max_params:
                     duration += time.time() - start
-                    if duration // 60 > (self.cfg.SPOS.DURATION - 1): # cost too much time in evolution
+                    if duration > (self.cfg.SPOS.DURATION - 1): # cost too much time in evolution
                         if logger:
                             logger.info("Give up this generation for wasting too much time")
+                            logger.info(generation)
                         self.bad_generations.append(generation)
                         pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution()                     
+                        generation = find_max_param, max_flops, max_params, min_params
+                        while generation in self.bad_generations:
+                            pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution() 
+                            generation = find_max_param, max_flops, max_params, min_params
                         duration = 0.0
                     start = time.time()    
                     print(f"\r Evolving {int(duration)}s", end = '')
