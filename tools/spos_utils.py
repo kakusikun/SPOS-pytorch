@@ -55,7 +55,7 @@ class Evolution:
         self.source_choice = {'channel_choices': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
                             'block_choices': [0, 1, 2, 3]}
         
-        self.bad_generations = {}
+        self.bad_generations = []
 
         p = next(iter(self.graph.model.parameters()))
         if p.is_cuda:
@@ -67,13 +67,10 @@ class Evolution:
             selected_child(dict):
                 a candidate that 
         '''
-        # Prepare random parents for the initial evolution
-        generation = (find_max_param, max_flops, max_params, min_params)
+        generation = find_max_param, max_flops, max_params, min_params
         if generation in self.bad_generations:
-            find_max_param, max_flops, max_params, min_params = self.bad_generations[generation]
-            if logger:
-                logger.info("Using historical generation")
-
+            pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution() 
+        # Prepare random parents for the initial evolution
         while len(self.parents) < self.parent_size:
             block_choices = self.graph.random_block_choices()
             channel_choices = self.graph.random_channel_choices(epoch_after_cs)
@@ -85,8 +82,6 @@ class Evolution:
             candidate['param'] = param
             self.parents.append(candidate)
 
-        # min/max_flop/param_count
-        min_f_c = max_f_c = 0
         # Breed children
         duration = 0.0
         while len(self.children) < self.children_size:
@@ -118,37 +113,20 @@ class Evolution:
 
             flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
 
-            # if flops > max_flop or model_size > upper_params:
-            if flops < (max_flops-self.flops_interval) or flops > max_flops \
-                    or param < min_params or param > max_params:
-                if flops < (max_flops-self.flops_interval):
-                    min_f_c += 1
-                elif flops > max_flops:
-                    max_f_c += 1
-
-                duration += time.time() - start
-                if duration // 60 > 4: # cost too much time in evolution
-                    orig_max_flops = max_flops
-                    if min_f_c > max_f_c:
-                        info = f"{max_flops:.2f} => "
-                        max_flops -= self.flops_interval
-                        info += f"{max_flops:.2f}"
+            if epoch_after_cs > 0:
+                # if flops > max_flop or model_size > upper_params:
+                if flops < (max_flops-self.flops_interval) or flops > max_flops \
+                        or param < min_params or param > max_params:
+                    duration += time.time() - start
+                    if duration // 60 > 4: # cost too much time in evolution
                         if logger:
-                            logger.info("Max FLOPs is too large, adjusted: " + info)
-                        min_f_c = 0
-
-                    if max_f_c > min_f_c:
-                        info = f"{max_flops:.2f} => "
-                        max_flops += self.flops_interval
-                        info += f"{max_flops:.2f}"
-                        if logger:
-                            logger.info("Max FLOPs is too small, adjusted: " + info)
-                        max_f_c = 0
-                    duration = 0.0
-                    self.bad_generations[(find_max_param, orig_max_flops, max_params, min_params)] = (find_max_param, max_flops, max_params, min_params)
-                start = time.time()    
-                print(f"\r Evolving {int(duration)}s", end = '')
-                continue
+                            logger.info("Give up this generation for wasting too much time")
+                        self.bad_generations.append(generation)
+                        pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution()                     
+                        duration = 0.0
+                    start = time.time()    
+                    print(f"\r Evolving {int(duration)}s", end = '')
+                    continue
 
             candidate['block_choices'] = block_choices
             candidate['channel_choices'] = channel_choices
@@ -166,6 +144,17 @@ class Evolution:
         self.parents = self.children[:self.parent_size]
         self.children = []
         return selected_child
+
+    def forced_evolution(self):
+        self.cur_step += 1
+        max_flops, pick_id, range_id, find_max_param = self.get_cur_evolve_state()
+        if find_max_param:
+            max_params=self.param_range[range_id]
+            min_params=self.param_range[-1]
+        else:
+            max_params=self.param_range[0]
+            min_params=self.param_range[range_id]
+        return pick_id, find_max_param, max_flops, max_params, min_params
 
     def get_cur_evolve_state(self):
         '''
