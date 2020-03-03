@@ -10,7 +10,7 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
-from torch.utils import data
+
 from src.factory.config_factory import _C as cfg
 from src.factory.config_factory import build_output
 from tools.logger import setup_logger
