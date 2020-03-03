@@ -60,7 +60,7 @@ def train_once(logger, epoch, graph, tdata, solver, pool=None, pool_lock=None, s
                 time.sleep(1)
 
         solver.zero_grad()
-        channel_masks = cand['channel_masks'].cuda()
+        channel_masks = cand['channel_masks']
         block_choices = cand['block_choices']            
         outputs = graph.model(batch['inp'], block_choices, channel_masks)
         loss, _ = graph.loss_head(outputs, batch)
