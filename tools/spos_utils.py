@@ -138,8 +138,9 @@ class Evolution:
                         max_f_c = 0
                     start = time.time()    
                 else:
-                    info = ". " * int(duration)
-                    logger.info("\r" + info)
+                    if int(duration) % 1 == 0:
+                        info = ". " * int(duration)
+                        logger.info("\r" + info)
                 continue
 
             candidate['block_choices'] = block_choices
