@@ -31,8 +31,8 @@ class ShuffleNasOneShot(nn.Module):
 
         assert len(self.stage_repeats) == len(self.stage_out_channels)
 
-        features = []
-        features.extend([
+        
+        self.stem = nn.Sequential(
             nn.Conv2d(
                 in_channels=3,
                 out_channels=input_channel,
@@ -42,9 +42,9 @@ class ShuffleNasOneShot(nn.Module):
                 bias=False),
             nn.BatchNorm2d(input_channel, affine=False),
             HardSwish()
-        ])
+        )
 
-
+        features = []
         block_id = 0
         for stage_id in range(len(self.stage_repeats)):
             numrepeat = self.stage_repeats[stage_id]
@@ -118,10 +118,12 @@ class ShuffleNasOneShot(nn.Module):
                         padding=0, bias=True),
         )
 
+        self._initialize_weights()
 
     def forward(self, x, block_choices, channel_masks):
         assert len(block_choices) == sum(self.stage_repeats) 
         assert channel_masks.shape[1] == sum(self.stage_repeats)
+        x = self.stem(x)
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
@@ -132,6 +134,30 @@ class ShuffleNasOneShot(nn.Module):
         assert block_idx == len(block_choices)
         x = self.output(x).view(x.size(0), -1)
         return x
+
+    def _initialize_weights(self):
+        for name, m in self.named_modules():
+            if isinstance(m, nn.Conv2d):
+                if 'stem' in name or 'SE' in name:
+                    nn.init.normal_(m.weight, 0, 0.01)
+                else:
+                    nn.init.normal_(m.weight, 0, 1.0 / m.weight.shape[1])
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0001)
+                nn.init.constant_(m.running_mean, 0)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0001)
+                nn.init.constant_(m.running_mean, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
 
 def shufflenas_oneshot(
