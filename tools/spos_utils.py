@@ -1,15 +1,16 @@
 import os
 import random
 import time
+import json
 import numpy as np
 from copy import deepcopy
+from collections import defaultdict
 from tools.flops_utils import get_flops_table, get_flop_params
 
 CHOICE = {
     'channel': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     'block': [0, 1, 2, 3]
 }
-
 
 class Evolution:
     def __init__(self, 
@@ -234,8 +235,10 @@ class Evolution:
         return max_flops, min_flops, max_params, min_params
 
     def _record_bad_generation(self):
-        root = os.getcwd()
-        path = os.path.join(root, 'external/historical_bad_generations.txt')
+        root = os.path.join(os.getcwd(), "external")
+        if not os.path.exists(root):
+            os.makedirs(root)
+        path = os.path.join(root, 'spos_historical_bad_generations.txt')
         with open(path, 'w') as f:
             for g in self.bad_generations:
                 msg = g + "\n"
@@ -272,6 +275,7 @@ class SearchEvolution:
         self.random_select = random_select
         self.mutate_chance = mutate_chance
         self.logger = logger
+        self.history = defaultdict(list)
 
         self.lookup_table = get_flops_table(
             input_size=cfg.INPUT.RESIZE[0],
@@ -288,15 +292,12 @@ class SearchEvolution:
         while len(population) < self.population_size:
             block_choices = self.graph.random_block_choices()
             channel_choices = self.graph.random_channel_choices()
-            channel_masks = self.graph.get_channel_masks(channel_choices)
-            acc = self._get_choice_accuracy(block_choices, channel_masks)
             flops, param = get_flop_params(block_choices, channel_choices, self.lookup_table)
             instance = {}
             instance['block'] = block_choices
             instance['channel'] = channel_choices
             instance['flops'] = flops
             instance['param'] = param
-            instance['acc'] = acc
             population.append(instance)
             print("\r Building Population" + f"{int(time.time()-start)}s", end='')
         if self.logger:
@@ -325,22 +326,23 @@ class SearchEvolution:
             children.append(child)
         return children
 
-    def evolve(self, population, leader_board):
+    def evolve(self, population, leader_board, search_iter):
         for instance in population:
-            if 'acc' not in instance:
+            if 'error' not in instance:
                 channel_masks = self.graph.get_channel_masks(instance['channel'])
                 acc = self._get_choice_accuracy(instance['block'], channel_masks)
-                instance['acc'] = acc
+                instance['error'] = 1 - acc
                 temp = (
-                    1 - deepcopy(instance['acc']), 
+                    1 - deepcopy(instance['error']), 
                     deepcopy(instance['block']),
                     deepcopy(instance['channel']),
                     deepcopy(instance['flops']),
                     deepcopy(instance['param']),
                 )
                 leader_board.push(temp)
+                self.history[f"{acc:.3f}"].append(instance)
         
-        population.sort(key=lambda x: x['acc'], reverse=True)
+        population.sort(key=lambda x: x['error'])
         parents = population[:self.retain_length]
         for instance in population[self.retain_length:]:
             if self.random_select > random.random():
@@ -379,77 +381,47 @@ class SearchEvolution:
             print("\r Evolving" + f"{int(time.time()-start)}s", end='')
 
         if self.logger:
-            self.logger.info("Population Evolved")
-
+            self.logger.info(f"[{search_iter:03}] Population Evolved")
         parents.extend(children_to_be_grown)
+        self._record_search_history(search_iter)
         return parents
 
-    def evolve_paper(self, population, leader_board):
+    def evolve_paper(self, population, leader_board, search_iter):
         for instance in population:
-            if 'acc' not in instance:
+            if 'error' not in instance:
                 channel_masks = self.graph.get_channel_masks(instance['channel'])
                 acc = self._get_choice_accuracy(instance['block'], channel_masks)
-                instance['acc'] = acc
-                temp = {}
-                for attr in instance:
-                    temp[attr] = deepcopy(instance[attr])
-                leader_board.push(temp)
-        topk = lea
-        population.sort(key=lambda x: x['acc'], reverse=True)
-        parents = population[:self.retain_length]
-        for instance in population[self.retain_length:]:
-            if self.random_select > random.random():
-                parents.append(instance)
-
+                instance['error'] = 1 - acc
+                temp = (
+                    1 - deepcopy(instance['error']), 
+                    deepcopy(instance['block']),
+                    deepcopy(instance['channel']),
+                    deepcopy(instance['flops']),
+                    deepcopy(instance['param']),
+                )
+                leader_board.push(temp)        
+                self.history[f"{acc:.3f}"].append(instance)
+        population = leader_board.topk()
         # Now find out how many spots we have left to fill.
-        parents_length = len(parents)
-        desired_length = len(population) - parents_length
-        children_to_be_grown = []
-
         start = time.time()
-        # Add children, which are bred from two remaining networks.
-        while len(children_to_be_grown) < desired_length:
-
-            # Get a random mom and dad.
-            father = random.randint(0, parents_length-1)
-            mother = random.randint(0, parents_length-1)
-
-            # Assuming they aren't the same network...
-            if father != mother:
-                father = parents[father]
-                mother = parents[mother]
-
-                # Breed them.
-                children = self.born(father, mother)
-
-                # Add the children one at a time.
-                for child in children:
-                    # Don't grow larger than desired length.
-                    if len(children_to_be_grown) >= desired_length:
-                        break
-                    flops, param = get_flop_params(child['block'], child['channel'], self.lookup_table)
-                    child['flops'] = flops
-                    child['param'] = param
-                    children_to_be_grown.append(child)
-            print("\r Evolving" + f"{int(time.time()-start)}s", end='')
-
+        p_crossover = self.mass_crossover(population[:(len(population) // 2)], self.population_size // 2)
+        p_mutation = self.mass_mutation(population[(len(population) // 2):], self.population_size - self.population_size // 2)
+        population = p_crossover + p_mutation
+        print("\r Evolving" + f"{int(time.time()-start)}s", end='')
         if self.logger:
-            self.logger.info("Population Evolved")
+            self.logger.info(f"[{search_iter:03}] Population Evolved")
+        self._record_search_history(search_iter)
+        return population
 
-        parents.extend(children_to_be_grown)
-        return parents
-
-
-    def mass_crossover(self, sub_population):
+    def mass_crossover(self, population, size):
         children = []
-        desired_length = len(sub_population)
-        while len(children) < desired_length:
-            father = random.randint(0, desired_length-1)
-            mother = random.randint(0, desired_length-1)
+        while len(children) < size:
+            father = random.randint(0, len(population)-1)
+            mother = random.randint(0, len(population)-1)
             # Assuming they aren't the same network...
             if father != mother:
-                father = sub_population[father]
-                mother = sub_population[mother]
+                father = population[father]
+                mother = population[mother]
                 child = {}
                 child['block'] = self.crossover_mutate(father['block'], mother['block'], CHOICE['block'], -1)
                 child['channel'] = self.crossover_mutate(father['channel'], mother['channel'], CHOICE['channel'], -1)
@@ -459,11 +431,10 @@ class SearchEvolution:
             children.append(child)
         return children
 
-    def mass_mutation(self, sub_population):
+    def mass_mutation(self, population, size):
         alien = []
-        desired_length = len(sub_population)
-        while len(alien) < desired_length:
-            instance = sub_population[random.randint(0, desired_length-1)]
+        while len(alien) < size:
+            instance = population[random.randint(0, len(population)-1)]
             instance['block'] = self.crossover_mutate(instance['block'], instance['block'], CHOICE['block'], self.mutate_chance)
             instance['channel'] = self.crossover_mutate(instance['channel'], instance['channel'], CHOICE['channel'], self.mutate_chance)
             flops, param = get_flop_params(instance['block'], instance['channel'], self.lookup_table)
@@ -471,6 +442,14 @@ class SearchEvolution:
             instance['param'] = param
             alien.append(instance)
         return alien
+
+    def _record_search_history(self, search_iter):
+        root = os.path.join(os.getcwd(), "external")
+        if not os.path.exists(root):
+            os.makedirs(root)
+        path = os.path.join(root, f"spos_search_history_{search_iter:03}.json")
+        with open(path, 'w') as f:
+            json.dump(self.history, f)
 
     @staticmethod
     def crossover_mutate(a, b, choices, prob):
