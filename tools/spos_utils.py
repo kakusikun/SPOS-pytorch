@@ -6,6 +6,9 @@ import numpy as np
 from copy import deepcopy
 from collections import defaultdict
 from tools.flops_utils import get_flops_table, get_flop_params
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 CHOICE = {
     'channel': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -259,21 +262,21 @@ class SearchEvolution:
         graph, 
         vdata,
         bndata,
-        search_iters=50,
         population_size=500, 
         retain_length=100, 
         random_select=0.1, 
         mutate_chance=0.1,
+        bn_recalc_imgs=20000,
         logger=None):
         self.cfg = cfg
         self.graph = graph
         self.vdata = vdata
         self.bndata = bndata
-        self.search_iters = search_iters
         self.population_size = population_size
         self.retain_length = retain_length
         self.random_select = random_select
         self.mutate_chance = mutate_chance
+        self.bn_recalc_imgs = bn_recalc_imgs
         self.logger = logger
         self.history = defaultdict(list)
 
@@ -305,7 +308,7 @@ class SearchEvolution:
         return population
 
     def _get_choice_accuracy(self, block_choices, channel_masks):
-        recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True)
+        recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True, self.bn_recalc_imgs)
         self.graph.model.eval()
         accus = []
         for batch in self.vdata:
