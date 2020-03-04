@@ -68,10 +68,9 @@ class Evolution:
         if p.is_cuda:
             self.use_gpu = True
 
-        #TODO: record historical bad generations
-        root = os.getcwd()
-        self.save_bad_generation_paath = os.path.join(root, 'external/historical_bad_generations.json')
         self.bad_generations = []
+        self._read_bad_generation()
+
 
     def evolve(self, epoch_after_cs, pick_id, find_max_param, max_flops, max_params, min_params, logger=None):
         '''
@@ -79,10 +78,10 @@ class Evolution:
             selected_child(dict):
                 a candidate that 
         '''
-        generation = find_max_param, max_flops, max_params, min_params
-        while generation in self.bad_generations:
+        g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
+        while g in self.bad_generations:
             pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution() 
-            generation = find_max_param, max_flops, max_params, min_params
+            g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
         # Prepare random parents for the initial evolution
         while len(self.parents) < self.parent_size:
             block_choices = self.graph.random_block_choices()
@@ -134,13 +133,13 @@ class Evolution:
                     if duration > (self.cfg.SPOS.DURATION - 1): # cost too much time in evolution
                         if logger:
                             logger.info("Give up this generation for wasting too much time")
-                            logger.info(generation)
-                        self.bad_generations.append(generation)
+                            logger.info(g)
+                        self.bad_generations.append(g)
                         pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution()                     
-                        generation = find_max_param, max_flops, max_params, min_params
-                        while generation in self.bad_generations:
+                        g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
+                        while g in self.bad_generations:
                             pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution() 
-                            generation = find_max_param, max_flops, max_params, min_params
+                            g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
                         duration = 0.0
                     start = time.time()    
                     print(f"\r Evolving {int(duration)}s", end = '')
@@ -223,9 +222,7 @@ class Evolution:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
         logger.info("[Evolution] Ends")
-        root = os.getcwd()
-        with open(os.path.join(root, 'external/OneShot_flops.json'), 'w') as f:
-            json.dump(lookup_table, f)
+        self._record_bad_generation()
 
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)
@@ -235,6 +232,23 @@ class Evolution:
         channel_choices = [3] * sum(self.graph.model.stage_repeats)        
         min_flops, min_params = get_flop_params(block_choices, channel_choices, self.lookup_table)
         return max_flops, min_flops, max_params, min_params
+
+    def _record_bad_generation(self):
+        root = os.getcwd()
+        path = os.path.join(root, 'external/historical_bad_generations.txt')
+        with open(path, 'w') as f:
+            for g in self.bad_generations:
+                msg = g + "\n"
+                f.write(msg)
+
+    def _read_bad_generation(self):
+        root = os.getcwd()
+        path = os.path.join(root, 'external/historical_bad_generations.txt')
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                for line in f.readline():
+                    g = line.strip()
+                    self.bad_generations.append(g)
 
 class SearchEvolution:
     def __init__(self, 
