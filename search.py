@@ -75,7 +75,7 @@ def main():
 
     loader = LoaderFactory.produce(cfg)
     graph = SPOS(cfg)
-    graph.use_multigpu()
+    graph.load(path=cfg.RESUME)
     genetic_search(cfg, graph, loader['val'], loader['train'], logger)
 
 def test():

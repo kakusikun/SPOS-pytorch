@@ -5,6 +5,7 @@ import json
 import numpy as np
 from copy import deepcopy
 from collections import defaultdict
+from tqdm import tqdm
 from tools.flops_utils import get_flops_table, get_flop_params
 import torch
 import torch.nn as nn
@@ -288,6 +289,7 @@ class SearchEvolution:
             last_conv_out_channel=self.graph.model.last_conv_out_channel,
             channels_layout=cfg.SPOS.CHANNELS_LAYOUT
             )
+        self.graph.use_multigpu()
 
     def build_population(self):
         population = []
@@ -308,6 +310,7 @@ class SearchEvolution:
         return population
 
     def _get_choice_accuracy(self, block_choices, channel_masks):
+        self.graph.model.train()
         recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True, self.bn_recalc_imgs)
         self.graph.model.eval()
         accus = []
@@ -330,13 +333,15 @@ class SearchEvolution:
         return children
 
     def evolve(self, population, leader_board, search_iter):
-        for instance in population:
+        start = time.time()
+        for i, instance in enumerate(population):
             if 'error' not in instance:
+                iter_start = time.time()
                 channel_masks = self.graph.get_channel_masks(instance['channel'])
                 acc = self._get_choice_accuracy(instance['block'], channel_masks)
                 instance['error'] = 1 - acc
                 temp = (
-                    1 - deepcopy(instance['error']), 
+                    deepcopy(instance['error']), 
                     deepcopy(instance['block']),
                     deepcopy(instance['channel']),
                     deepcopy(instance['flops']),
@@ -344,6 +349,7 @@ class SearchEvolution:
                 )
                 leader_board.push(temp)
                 self.history[f"{acc:.3f}"].append(instance)
+                print("\r " + f"Growing [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{i / self.population_size * 100:.2f}]%", end='')
         
         population.sort(key=lambda x: x['error'])
         parents = population[:self.retain_length]
@@ -359,6 +365,7 @@ class SearchEvolution:
         start = time.time()
         # Add children, which are bred from two remaining networks.
         while len(children_to_be_grown) < desired_length:
+            iter_start = time.time()
 
             # Get a random mom and dad.
             father = random.randint(0, parents_length-1)
@@ -381,7 +388,7 @@ class SearchEvolution:
                     child['flops'] = flops
                     child['param'] = param
                     children_to_be_grown.append(child)
-            print("\r Evolving" + f"{int(time.time()-start)}s", end='')
+            print("\r " + f"Evolving [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{len(children_to_be_grown) / desired_length * 100:.2f}]%", end='')
 
         if self.logger:
             self.logger.info(f"[{search_iter:03}] Population Evolved")
@@ -467,9 +474,8 @@ def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
 
 def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_imgs=20000):
-    graph.model.train()
     count = 0
-    for batch in bndata:
+    for batch in tqdm(bndata, desc="recalc bn"):
         if use_gpu:
             img = batch['inp'].cuda()
         graph.model(img, block_choices, channel_masks)
