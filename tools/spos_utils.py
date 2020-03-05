@@ -289,6 +289,7 @@ class SearchEvolution:
             last_conv_out_channel=self.graph.model.last_conv_out_channel,
             channels_layout=cfg.SPOS.CHANNELS_LAYOUT
             )
+
         self.graph.use_multigpu()
 
     def build_population(self):
@@ -314,12 +315,17 @@ class SearchEvolution:
         recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True, self.bn_recalc_imgs)
         self.graph.model.eval()
         accus = []
+        start = time.time()
+        msg = "Testing"
         for batch in self.vdata:
+            iter_start = time.time()
             with torch.no_grad():
                 for key in batch:
                     batch[key] = batch[key].cuda()
                 outputs = self.graph.model(batch['inp'], block_choices, channel_masks)
             accus.append((outputs.max(1)[1] == batch['target']).float().mean())
+            print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter", end='')
+        print("")
         accu = tensor_to_scalar(torch.stack(accus).mean())
         return accu
 
@@ -333,10 +339,10 @@ class SearchEvolution:
         return children
 
     def evolve(self, population, leader_board, search_iter):
-        start = time.time()
-        for i, instance in enumerate(population):
+        if self.logger:
+            self.logger.info(f"[{search_iter:03}] Growing")
+        for instance in population:
             if 'error' not in instance:
-                iter_start = time.time()
                 channel_masks = self.graph.get_channel_masks(instance['channel'])
                 acc = self._get_choice_accuracy(instance['block'], channel_masks)
                 instance['error'] = 1 - acc
@@ -349,8 +355,7 @@ class SearchEvolution:
                 )
                 leader_board.push(temp)
                 self.history[f"{acc:.3f}"].append(instance)
-                print("\r " + f"Growing [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{i / self.population_size * 100:.2f}]%", end='')
-        
+
         population.sort(key=lambda x: x['error'])
         parents = population[:self.retain_length]
         for instance in population[self.retain_length:]:
@@ -363,6 +368,7 @@ class SearchEvolution:
         children_to_be_grown = []
 
         start = time.time()
+        msg = "Evolving"
         # Add children, which are bred from two remaining networks.
         while len(children_to_be_grown) < desired_length:
             iter_start = time.time()
@@ -388,10 +394,10 @@ class SearchEvolution:
                     child['flops'] = flops
                     child['param'] = param
                     children_to_be_grown.append(child)
-            print("\r " + f"Evolving [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{len(children_to_be_grown) / desired_length * 100:.2f}]%", end='')
-
+            print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{len(children_to_be_grown) / desired_length * 100:.2f}]%", end='')
+        print("")
         if self.logger:
-            self.logger.info(f"[{search_iter:03}] Population Evolved")
+            self.logger.info(f"[{search_iter:03}] Evolved")
         parents.extend(children_to_be_grown)
         self._record_search_history(search_iter)
         return parents
@@ -475,7 +481,10 @@ def make_divisible(x, divisible_by=8):
 
 def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_imgs=20000):
     count = 0
-    for batch in tqdm(bndata, desc="recalc bn"):
+    start = time.time()
+    msg = "BN Updating"
+    for batch in bndata:
+        iter_start = time.time()
         if use_gpu:
             img = batch['inp'].cuda()
         graph.model(img, block_choices, channel_masks)
@@ -483,6 +492,8 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
         count += img.size(0)        
         if count > bn_recalc_imgs:
             break
+        print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{count / bn_recalc_imgs * 100:.2f}]%", end='')
+    print("")
 
 def tensor_to_scalar(tensor):
     if isinstance(tensor, list):

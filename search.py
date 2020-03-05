@@ -60,8 +60,8 @@ def test_genetic_search(cfg, graph, vdata, bndata, logger, search_iters=5):
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Deep Learning")
     parser.add_argument("--config", default="", help="path to config file", type=str)
-    parser.add_argument('--list', action='store_true',
-                        help='list available config in factories')
+    parser.add_argument('--test', action='store_true',
+                        help='testing the algorithm')
     parser.add_argument("opts", help="Modify config options using the command-line", default=None,
                         nargs=argparse.REMAINDER)
 
@@ -76,30 +76,10 @@ def main():
     loader = LoaderFactory.produce(cfg)
     graph = SPOS(cfg)
     graph.load(path=cfg.RESUME)
-    genetic_search(cfg, graph, loader['val'], loader['train'], logger)
-
-def test():
-    parser = argparse.ArgumentParser(description="PyTorch Deep Learning")
-    parser.add_argument("--config", default="", help="path to config file", type=str)
-    parser.add_argument('--list', action='store_true',
-                        help='list available config in factories')
-    parser.add_argument("opts", help="Modify config options using the command-line", default=None,
-                        nargs=argparse.REMAINDER)
-
-    args = parser.parse_args()
-    if args.config != "":
-        cfg.merge_from_file(args.config)
-    cfg.merge_from_list(args.opts)    
-    build_output(cfg, args.config)
-    logger = setup_logger(cfg.OUTPUT_DIR)
-    deploy_macro(cfg)    
-
-    loader = LoaderFactory.produce(cfg)
-    graph = SPOS(cfg)
-    graph.load(path=cfg.RESUME)
-    graph.use_multigpu()
-    test_genetic_search(cfg, graph, loader['val'], loader['train'], logger)
+    if args.test:
+        test_genetic_search(cfg, graph, loader['val'], loader['train'], logger)
+    else:
+        genetic_search(cfg, graph, loader['val'], loader['train'], logger)
 
 if __name__ == '__main__':
     main()
-    # test()
