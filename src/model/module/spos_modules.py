@@ -12,23 +12,6 @@ class HardSwish(nn.Module):
         clip = torch.clamp(x + 3, 0, 6) / 6
         return x * clip
 
-class ChannelSelector(nn.Module):
-    """
-    Random channel # selection
-    """
-    def __init__(self, channel_number):
-        super(ChannelSelector, self).__init__()
-        self.channel_number = channel_number
-
-    def forward(self, x, channel_mask):
-        assert channel_mask.dim() == 1
-        channel_mask = channel_mask[:self.channel_number]
-        c = channel_mask.shape[0]
-        channel_mask = channel_mask.view(1, c, 1, 1)
-        if x.is_cuda:
-            channel_mask = channel_mask.cuda()
-        return x * channel_mask.expand_as(x)
-
 class ShufflenetCS(nn.Module):
     def __init__(self, inp, oup, base_mid_channels, ksize, stride, activation='relu', useSE=False, affine=False):
         super(ShufflenetCS, self).__init__()
@@ -48,14 +31,11 @@ class ShufflenetCS(nn.Module):
         branch_main = [
             # pw
             nn.Conv2d(self.inc, self.midc, 1, 1, 0, bias=False),
-            ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, ksize, stride, pad, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             # pw-linear
             nn.Conv2d(self.midc, self.ouc, 1, 1, 0, bias=False),
             nn.BatchNorm2d(self.ouc, affine=affine),
@@ -64,14 +44,14 @@ class ShufflenetCS(nn.Module):
         if activation == 'relu':
             assert useSE == False
             '''This model should not have SE with ReLU'''
-            branch_main[4] = nn.ReLU(inplace=True)
+            branch_main[2] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[4] = HardSwish()
+            branch_main[2] = HardSwish()
             branch_main[-1] = HardSwish()
             if useSE:
                 branch_main.append(SEModule(self.ouc))
-        self.branch_main = nn.ModuleList(branch_main)
+        self.branch_main = nn.Sequential(*branch_main)
 
         if stride == 2:
             branch_proj = [
@@ -91,24 +71,14 @@ class ShufflenetCS(nn.Module):
         else:
             self.branch_proj = None
 
-    def forward(self, old_x, channel_mask):
+    def forward(self, old_x):
         if self.stride==1:
             x_proj, x = channel_shuffle(old_x)
-            for m in self.branch_main:
-                if isinstance(m, ChannelSelector):
-                    x = m(x, channel_mask)
-                else:
-                    x = m(x)
-            return torch.cat((x_proj, x), 1)
+            return torch.cat((x_proj, self.branch_main(x)), 1)
         elif self.stride==2:
             x_proj = old_x
             x = old_x
-            for m in self.branch_main:
-                if isinstance(m, ChannelSelector):
-                    x = m(x, channel_mask)
-                else:
-                    x = m(x)
-            return torch.cat((self.branch_proj(x_proj), x), 1)
+            return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
 
 class ShuffleXceptionCS(nn.Module):
 
@@ -132,24 +102,18 @@ class ShuffleXceptionCS(nn.Module):
             nn.BatchNorm2d(self.inc, affine=affine),
             # pw
             nn.Conv2d(self.inc, self.midc, 1, 1, 0, bias=False),
-            ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, 3, 1, 1, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             # pw
             nn.Conv2d(self.midc, self.midc, 1, 1, 0, bias=False),
-            ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, 3, 1, 1, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
-            ChannelSelector(self.midc),
             # pw
             nn.Conv2d(self.midc, self.ouc, 1, 1, 0, bias=False),
             nn.BatchNorm2d(self.ouc, affine=affine),
@@ -157,12 +121,12 @@ class ShuffleXceptionCS(nn.Module):
         ]
 
         if activation == 'relu':
-            branch_main[6] = nn.ReLU(inplace=True)
-            branch_main[14] = nn.ReLU(inplace=True)
+            branch_main[4] = nn.ReLU(inplace=True)
+            branch_main[9] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[6] = HardSwish()
-            branch_main[14] = HardSwish()
+            branch_main[4] = HardSwish()
+            branch_main[9] = HardSwish()
             branch_main[-1] = HardSwish()
         assert None not in branch_main
 
@@ -170,7 +134,7 @@ class ShuffleXceptionCS(nn.Module):
             assert activation != 'relu'
             branch_main.append(SEModule(self.ouc))
 
-        self.branch_main = nn.ModuleList(branch_main)
+        self.branch_main = nn.Sequential(*branch_main)
 
         if self.stride == 2:
             branch_proj = [
@@ -188,24 +152,14 @@ class ShuffleXceptionCS(nn.Module):
                 branch_proj[-1] = HardSwish()
             self.branch_proj = nn.Sequential(*branch_proj)
 
-    def forward(self, old_x, channel_mask):
+    def forward(self, old_x):
         if self.stride==1:
             x_proj, x = channel_shuffle(old_x)
-            for m in self.branch_main:
-                if isinstance(m, ChannelSelector):
-                    x = m(x, channel_mask)
-                else:
-                    x = m(x)
-            return torch.cat((x_proj, x), 1)
+            return torch.cat((x_proj, self.branch_main(x)), 1)
         elif self.stride==2:
             x_proj = old_x
             x = old_x
-            for m in self.branch_main:
-                if isinstance(m, ChannelSelector):
-                    x = m(x, channel_mask)
-                else:
-                    x = m(x)
-            return torch.cat((self.branch_proj(x_proj), x), 1)
+            return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
 
 def channel_shuffle(x):
     batchsize, num_channels, height, width = x.data.size()
@@ -301,16 +255,16 @@ class ShuffleNasBlock(nn.Module):
         self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 3, stride, 'ShuffleXception', act_name=act_name, use_se=use_se)
 
-    def forward(self, x, block_choice, channel_mask):
+    def forward(self, x, block_choice, channel_choice):
         # ShuffleNasBlock has three inputs and passes two inputs to the ShuffleNetCSBlock
         if block_choice == 0:
-            x = self.block_sn_3x3(x, channel_mask)
+            x = self.block_sn_3x3(x, channel_choice)
         elif block_choice == 1:
-            x = self.block_sn_5x5(x, channel_mask)
+            x = self.block_sn_5x5(x, channel_choice)
         elif block_choice == 2:
-            x = self.block_sn_7x7(x, channel_mask)
+            x = self.block_sn_7x7(x, channel_choice)
         elif block_choice == 3:
-            x = self.block_sx_3x3(x, channel_mask)
+            x = self.block_sx_3x3(x, channel_choice)
         return x
 
 def make_divisible(x, divisible_by=8):

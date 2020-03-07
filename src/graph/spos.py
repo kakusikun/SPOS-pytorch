@@ -99,30 +99,6 @@ class SPOS(BaseGraph):
                     channel_choices.append(channel_choice)
         return channel_choices
 
-    def get_channel_masks(self, channel_choices):
-        """
-        candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-        mode: str, "dense" or "sparse". Sparse mode select # channel from candidate scales. Dense mode selects
-              # channels between randint(min_channel, max_channel).
-        """
-        assert len(self.stage_repeats) == len(self.stage_out_channels)
-
-        channel_masks = []
-        global_max_length = make_divisible(int(self.stage_out_channels[-1] // 2 * self.candidate_scales[-1]))
-        for i in range(len(self.stage_out_channels)):
-            for _ in range(self.stage_repeats[i]):
-                local_mask = [0] * global_max_length
-                # this is for channel selection warm up: channel choice ~ (8, 9) -> (7, 9) -> ... -> (0, 9)
-                select_channel = int(self.stage_out_channels[i] // 2 *
-                                            self.candidate_scales[channel_choices[i]])
-                # To take full advantages of acceleration, # of channels should be divisible to 8.
-                select_channel = make_divisible(select_channel)
-                for j in range(select_channel):
-                    local_mask[j] = 1
-                channel_masks.append(local_mask)
-                
-        return torch.Tensor(channel_masks).expand(1 if len(self.cfg.MODEL.GPU) == 0 else len(self.cfg.MODEL.GPU), sum(self.stage_repeats), global_max_length)
-
 
 if __name__ == '__main__':
     from src.factory.config_factory import _C as cfg
@@ -145,7 +121,6 @@ if __name__ == '__main__':
 
     block_choice = [0, 0, 3, 1, 1, 1, 0, 0, 2, 0, 2, 1, 1, 0, 2, 0]
     channel_choice = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
-    channel_mask = graph.get_channel_masks(channel_choice)
     x = torch.ones(2,3,112,112)
-    out = graph.model(x, block_choice, channel_mask)
+    out = graph.model(x, block_choice, channel_choice)
     print(out)

@@ -226,7 +226,6 @@ class Evolution:
                         logger=logger
                     )
                 with lock:
-                    candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
         logger.info("[Evolution] Ends")
 
@@ -311,9 +310,9 @@ class SearchEvolution:
             self.logger.info("Population Built")
         return population
 
-    def _get_choice_accuracy(self, block_choices, channel_masks):
+    def _get_choice_accuracy(self, block_choices, channel_choices):
         self.graph.model.train()
-        recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True, self.bn_recalc_imgs)
+        recalc_bn(self.graph, block_choices, channel_choices, self.bndata, True, self.bn_recalc_imgs)
         self.graph.model.eval()
         accus = []
         start = time.time()
@@ -323,7 +322,7 @@ class SearchEvolution:
             with torch.no_grad():
                 for key in batch:
                     batch[key] = batch[key].cuda()
-                outputs = self.graph.model(batch['inp'], block_choices, channel_masks)
+                outputs = self.graph.model(batch['inp'], block_choices, channel_choices)
             accus.append((outputs.max(1)[1] == batch['target']).float().mean())
             print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter                      ", end='')
         print("")
@@ -346,8 +345,7 @@ class SearchEvolution:
                 if self.logger and i % 50 == 0:
                     self.logger.info(f"Growing    Search [{search_iter:03}]    Step [{i:03}]    Duration [{(time.time()-start)/60:.2f}]s")
 
-                channel_masks = self.graph.get_channel_masks(instance['channel'])
-                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                acc = self._get_choice_accuracy(instance['block'], instance['channel'])
                 instance['error'] = 1 - acc
                 temp = (
                     deepcopy(instance['error']), 
@@ -402,8 +400,7 @@ class SearchEvolution:
     def evolve_paper(self, population, leader_board, search_iter):
         for instance in population:
             if 'error' not in instance:
-                channel_masks = self.graph.get_channel_masks(instance['channel'])
-                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                acc = self._get_choice_accuracy(instance['block'], instance['channel'])
                 instance['error'] = 1 - acc
                 temp = (
                     1 - deepcopy(instance['error']), 
@@ -476,7 +473,7 @@ class SearchEvolution:
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
 
-def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_imgs=20000):
+def recalc_bn(graph, block_choices, channel_choices, bndata, use_gpu, bn_recalc_imgs=20000):
     count = 0
     start = time.time()
     msg = "BN Updating"
@@ -484,7 +481,7 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
         iter_start = time.time()
         if use_gpu:
             img = batch['inp'].cuda()
-        graph.model(img, block_choices, channel_masks)
+        graph.model(img, block_choices, channel_choices)
 
         count += img.size(0)        
         print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter    [{count / bn_recalc_imgs * 100:.2f}]%", end='')
