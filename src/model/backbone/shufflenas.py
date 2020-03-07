@@ -67,7 +67,7 @@ class ShuffleNasOneShot(nn.Module):
                         input_channel,
                         output_channel,
                         stride=stride,
-                        max_channel_scale=self.candidate_scales[-1],
+                        channel_scales=self.candidate_scales,
                         use_se=block_use_se,
                         act_name=act_name)
                 ])

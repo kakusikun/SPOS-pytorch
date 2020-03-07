@@ -219,7 +219,7 @@ class ShuffleNetCSBlock(nn.Module):
     def __init__(self, 
         input_channel, 
         output_channel, 
-        mid_channel, 
+        channel_scales, 
         ksize, 
         stride, 
         block_mode='ShuffleNetV2', 
@@ -236,7 +236,6 @@ class ShuffleNetCSBlock(nn.Module):
         self.block_mode = block_mode
         self.input_channel = input_channel
         self.output_channel = output_channel
-        self.mid_channel = mid_channel
         """
         Regular block: (We usually have the down-sample block first, then followed by repeated regular blocks)
         Input[64] -> split two halves -> main branch: [32] --> mid_channels (final_output_C[64] // 2 * scale[1.4])
@@ -253,37 +252,39 @@ class ShuffleNetCSBlock(nn.Module):
 
         Since scale ~ (0, 2), this is guaranteed: main mid channel < final output channel
         """
-
-        if block_mode == 'ShuffleNetV2':
-            self.block = ShufflenetCS(
-                self.input_channel, 
-                self.output_channel, 
-                self.mid_channel,
-                ksize=ksize,
-                stride=stride,
-                activation=act_name,
-                useSE=use_se,
-                affine=False
-            )
-        elif block_mode == 'ShuffleXception':
-            self.block = ShuffleXceptionCS(
-                self.input_channel, 
-                self.output_channel, 
-                self.mid_channel,
-                stride=stride,
-                activation=act_name,
-                useSE=use_se,
-                affine=False
-            )
-    def forward(self, x, channel_mask):
-        return self.block(x, channel_mask)
+        self.block = nn.ModuleList()
+        for i in range(len(channel_scales)):
+            mid_channel = make_divisible(int(output_channel // 2 * channel_scales[i]))
+            if block_mode == 'ShuffleNetV2':
+                self.block.append(ShufflenetCS(
+                    self.input_channel, 
+                    self.output_channel, 
+                    mid_channel,
+                    ksize=ksize,
+                    stride=stride,
+                    activation=act_name,
+                    useSE=use_se,
+                    affine=False
+                ))
+            elif block_mode == 'ShuffleXception':
+                self.block.append(ShuffleXceptionCS(
+                    self.input_channel, 
+                    self.output_channel, 
+                    mid_channel,
+                    stride=stride,
+                    activation=act_name,
+                    useSE=use_se,
+                    affine=False
+                ))
+    def forward(self, x, channel_choice):
+        return self.block[channel_choice](x)
 
 class ShuffleNasBlock(nn.Module):
     def __init__(self, 
         input_channel, 
         output_channel, 
         stride, 
-        max_channel_scale=2.0, 
+        channel_scales, 
         act_name='relu', 
         use_se=False):
         super(ShuffleNasBlock, self).__init__()
@@ -291,14 +292,13 @@ class ShuffleNasBlock(nn.Module):
         """
         Four pre-defined blocks
         """
-        max_mid_channel = make_divisible(int(output_channel // 2 * max_channel_scale))
-        self.block_sn_3x3 = ShuffleNetCSBlock(input_channel, output_channel, max_mid_channel,
+        self.block_sn_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 3, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sn_5x5 = ShuffleNetCSBlock(input_channel, output_channel, max_mid_channel,
+        self.block_sn_5x5 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 5, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sn_7x7 = ShuffleNetCSBlock(input_channel, output_channel, max_mid_channel,
+        self.block_sn_7x7 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 7, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, max_mid_channel,
+        self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 3, stride, 'ShuffleXception', act_name=act_name, use_se=use_se)
 
     def forward(self, x, block_choice, channel_mask):
