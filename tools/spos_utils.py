@@ -67,7 +67,7 @@ class Evolution:
 
         self.cur_step = 0
         self.source_choice = {'channel_choices': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-                            'block_choices': [0, 1, 2, 3]}
+                            'block_choices': [0, 3]}
         
         p = next(iter(self.graph.model.parameters()))
         if p.is_cuda:

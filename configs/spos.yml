@@ -1,4 +1,4 @@
-EXPERIMENT: "[SPOS-supernet]_[emotion]_[augmix_ce]_[SGDW_nesterov]_[cosine_0.02_noRestart]_[scratch]"
+EXPERIMENT: "SPOS-supernetv2_emotion_augmix-cels_SGDW-nesterov_cosine-0.01-noRestart-warmup_scratch"
 # [modelname]_[task]_[loss]_[opt]_[lr]_[trick]_[pretrain]
 IO: True
 SAVE: True
@@ -9,49 +9,49 @@ EVALUATE_FREQ: 1
 # GRAPH: "imagenet"
 # ENGINE: "imagenet"
 # TRAINER: "imagenet"
-NUM_WORKERS: 1
+NUM_WORKERS: 16
 MODEL:
-  GPU: [1]
+  GPU: [3]
   # BACKBONE: 'shufflenas'
 INPUT:
   RESIZE: (112, 112)
   # PAD: 4
-  TRAIN_BS: 32
-  TEST_BS: 32
+  TRAIN_BS: 64
+  TEST_BS: 512
   MEAN: [0.5, 0.5, 0.5]
   STD: [0.5, 0.5, 0.5]  
   # RAND_AUG_N: 2
   # RAND_AUG_M: 10
 DB:
+  PATH: "/home/agent/deep-learning-works/data"
   NUM_CLASSES: 7 #D:702, M:751 MSMT:2012(merge)
   DATA: "emotion"
   DATA_FORMAT: "classification"
   LOADER: "classification"
   USE_TRAIN: True
   USE_TEST: True
-  PATH: "/media/allen/mass/DB/"
 TRAIN_TRANSFORM: "AugMix Tensorize Normalize"
 TEST_TRANSFORM: "Tensorize Normalize"
 SOLVER:
   OPTIMIZER: "SGDW"
   START_EPOCH: 1
-  MAX_EPOCHS: 300
-  BASE_LR: 0.02
+  MAX_EPOCHS: 120
+  BASE_LR: 0.01
   BIAS_LR_FACTOR: 1.0
-  WEIGHT_DECAY: 0.0005
+  WEIGHT_DECAY: 0.00004
   MOMENTUM: 0.9
   WEIGHT_DECAY_BIAS_FACTOR: 1.0
   NESTEROV: True
   LR_POLICY: "cosine"
-  T_0: 300
-  NUM_RESTART: 2
-  CUSTOM: [['bn', 'wd', 0.0]]
+  T_0: 120
+  # CUSTOM: [['bn', 'wd', 0.0]]
   # MIN_LR: 1e-5
-  # WARMUP: True
+  WARMUP: True
   # GAMMA: 0.1
-  # WARMUP_FACTOR: 0.01
-  # WARMUP_SIZE: 10.0
+  WARMUP_FACTOR: 0.01
+  WARMUP_SIZE: 5.0
   # PLATEAU_SIZE: 100.0
-# RESUME: "/media/allen/mass/deep-learning-works/result/cifar10/[OSNet]_[cifar10]_[augmix_ce]_[SGD]_[cosine_lr_0.1_period_15]_[scratch]/2020-02-07_11-46-38/weights/model_218_0.9436.pth"
-# EVALUATE: ["main", "/media/allen/mass/deep-learning-works/result_2019-06-28_18:09:28/weights/model_main_277_92.4000.pth", "fc", "/media/allen/mass/deep-learning-works/result_2019-06-28_18:09:28/weights/model_fc_277_92.4000.pth"]
-
+SPOS:
+  EPOCH_TO_CS: 30
+  DURATION: 120
+RESUME: "/home/agent/SPOS-pytorch/result/SPOS-supernet_emotion_augmix-cels_SGDW-nesterov_cosine-0.5-noRestart-warmup_scratch/2020-03-03_05-12-09/weights/model_119_0.6581.pth"

@@ -68,7 +68,7 @@ def make_OneShot_flops_table(
     stage_repeats = [4, 4, 8, 4]
     stage_out_channels = [64, 160, 320, 640]
     channel_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0] 
-    block_choices = [0, 1, 2, 3]
+    block_choices = [0, 3]
 
     lookup_table = dict()
     lookup_table['config'] = dict()
