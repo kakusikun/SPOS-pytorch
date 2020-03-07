@@ -119,7 +119,7 @@ if __name__ == '__main__':
     cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
     graph = SPOS(cfg)
 
-    block_choice = [0, 0, 3, 1, 1, 1, 0, 0, 2, 0, 2, 1, 1, 0, 2, 0]
+    block_choice = [0, 0, 3, 0, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 3, 0]
     channel_choice = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
     x = torch.ones(2,3,112,112)
     out = graph.model(x, block_choice, channel_choice)

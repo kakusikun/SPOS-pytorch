@@ -248,10 +248,6 @@ class ShuffleNasBlock(nn.Module):
         """
         self.block_sn_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 3, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sn_5x5 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
-                                                5, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sn_7x7 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
-                                                7, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
         self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
                                                 3, stride, 'ShuffleXception', act_name=act_name, use_se=use_se)
 
@@ -259,10 +255,6 @@ class ShuffleNasBlock(nn.Module):
         # ShuffleNasBlock has three inputs and passes two inputs to the ShuffleNetCSBlock
         if block_choice == 0:
             x = self.block_sn_3x3(x, channel_choice)
-        elif block_choice == 1:
-            x = self.block_sn_5x5(x, channel_choice)
-        elif block_choice == 2:
-            x = self.block_sn_7x7(x, channel_choice)
         elif block_choice == 3:
             x = self.block_sx_3x3(x, channel_choice)
         return x
