@@ -50,10 +50,12 @@ class ShufflenetCS(nn.Module):
             nn.Conv2d(self.inc, self.midc, 1, 1, 0, bias=False),
             ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, ksize, stride, pad, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             # pw-linear
             nn.Conv2d(self.midc, self.ouc, 1, 1, 0, bias=False),
             nn.BatchNorm2d(self.ouc, affine=affine),
@@ -62,10 +64,10 @@ class ShufflenetCS(nn.Module):
         if activation == 'relu':
             assert useSE == False
             '''This model should not have SE with ReLU'''
-            branch_main[3] = nn.ReLU(inplace=True)
+            branch_main[4] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[3] = HardSwish()
+            branch_main[4] = HardSwish()
             branch_main[-1] = HardSwish()
             if useSE:
                 branch_main.append(SEModule(self.ouc))
@@ -132,18 +134,22 @@ class ShuffleXceptionCS(nn.Module):
             nn.Conv2d(self.inc, self.midc, 1, 1, 0, bias=False),
             ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, 3, 1, 1, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             # pw
             nn.Conv2d(self.midc, self.midc, 1, 1, 0, bias=False),
             ChannelSelector(self.midc),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             None,
             # dw
             nn.Conv2d(self.midc, self.midc, 3, 1, 1, groups=self.midc, bias=False),
             nn.BatchNorm2d(self.midc, affine=affine),
+            ChannelSelector(self.midc),
             # pw
             nn.Conv2d(self.midc, self.ouc, 1, 1, 0, bias=False),
             nn.BatchNorm2d(self.ouc, affine=affine),
@@ -151,12 +157,12 @@ class ShuffleXceptionCS(nn.Module):
         ]
 
         if activation == 'relu':
-            branch_main[5] = nn.ReLU(inplace=True)
-            branch_main[11] = nn.ReLU(inplace=True)
+            branch_main[6] = nn.ReLU(inplace=True)
+            branch_main[14] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[5] = HardSwish()
-            branch_main[11] = HardSwish()
+            branch_main[6] = HardSwish()
+            branch_main[14] = HardSwish()
             branch_main[-1] = HardSwish()
         assert None not in branch_main
 

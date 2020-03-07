@@ -324,7 +324,7 @@ class SearchEvolution:
                     batch[key] = batch[key].cuda()
                 outputs = self.graph.model(batch['inp'], block_choices, channel_masks)
             accus.append((outputs.max(1)[1] == batch['target']).float().mean())
-            print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter", end='')
+            print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter                      ", end='')
         print("")
         accu = tensor_to_scalar(torch.stack(accus).mean())
         return accu
@@ -339,10 +339,12 @@ class SearchEvolution:
         return children
 
     def evolve(self, population, leader_board, search_iter):
-        if self.logger:
-            self.logger.info(f"[{search_iter:03}] Growing")
-        for instance in population:
+        start = time.time()
+        for i, instance in enumerate(population):
             if 'error' not in instance:
+                if self.logger and i % 50 == 0:
+                    self.logger.info(f"Growing    Search [{search_iter:03}]    Step [{i:03}]    Duration [{(time.time()-start)/60:.2f}]s")
+
                 channel_masks = self.graph.get_channel_masks(instance['channel'])
                 acc = self._get_choice_accuracy(instance['block'], channel_masks)
                 instance['error'] = 1 - acc
@@ -366,13 +368,9 @@ class SearchEvolution:
         parents_length = len(parents)
         desired_length = len(population) - parents_length
         children_to_be_grown = []
-
-        start = time.time()
-        msg = "Evolving"
+        
         # Add children, which are bred from two remaining networks.
         while len(children_to_be_grown) < desired_length:
-            iter_start = time.time()
-
             # Get a random mom and dad.
             father = random.randint(0, parents_length-1)
             mother = random.randint(0, parents_length-1)
@@ -394,10 +392,8 @@ class SearchEvolution:
                     child['flops'] = flops
                     child['param'] = param
                     children_to_be_grown.append(child)
-            print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{len(children_to_be_grown) / desired_length * 100:.2f}]%", end='')
-        print("")
         if self.logger:
-            self.logger.info(f"[{search_iter:03}] Evolved")
+            self.logger.info(f"Evolved    Search [{search_iter:03}]")
         parents.extend(children_to_be_grown)
         self._record_search_history(search_iter)
         return parents
@@ -490,10 +486,9 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
         graph.model(img, block_choices, channel_masks)
 
         count += img.size(0)        
+        print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter    [{count / bn_recalc_imgs * 100:.2f}]%", end='')
         if count > bn_recalc_imgs:
             break
-        print("\r  ------------------ " + f"{msg:<20} [{int(time.time()-start)}]s    [{int(time.time()-iter_start)}]s/iter    [{count / bn_recalc_imgs * 100:.2f}]%", end='')
-    print("")
 
 def tensor_to_scalar(tensor):
     if isinstance(tensor, list):

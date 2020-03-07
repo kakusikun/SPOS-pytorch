@@ -12,15 +12,17 @@ from tools.spos_utils import make_divisible
 
 class ShuffleNasOneShot(nn.Module):
     def __init__(self,
+        strides,
+        stage_repeats,
         n_class=1000,
         use_se=False,
         last_conv_after_pooling=False,
         stage_out_channels=None,
         candidate_scales=None,
-        last_conv_out_channel=1024):
+        last_conv_out_channel=512):
         super(ShuffleNasOneShot, self).__init__()
-        self.strides = [2, 2, 2, 1]
-        self.stage_repeats = [4, 4, 8, 4]
+        self.strides = strides
+        self.stage_repeats = stage_repeats
         self.stage_out_channels = stage_out_channels
         self.candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
         self.use_se = use_se
@@ -157,6 +159,10 @@ class ShuffleNasOneShot(nn.Module):
 
 
 def shufflenas_oneshot(
+    strides,
+    stage_repeats,
+    stage_out_channels,
+    last_conv_out_channel,
     n_class=1000,
     use_se=False,
     last_conv_after_pooling=False,
@@ -175,15 +181,15 @@ def shufflenas_oneshot(
     '''
 
     if channels_layout == 'OneShot':
-        stage_out_channels = [64, 160, 320, 640]
         candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-        last_conv_out_channel = 1024
     else:
         raise ValueError("Unrecognized channels_layout: {}. "
                          "Please choose from ['OneShot']".format(channels_layout))
 
         # Nothing about architecture is specified, do random block selection and channel selection.
     return ShuffleNasOneShot(
+        strides=strides,
+        stage_repeats=stage_repeats,
         n_class=n_class,
         use_se=use_se,
         last_conv_after_pooling=last_conv_after_pooling,
@@ -202,5 +208,5 @@ if __name__ == '__main__':
 
     all_channel_mask, choice = model.random_channel_mask(epoch_after_cs=1)
     block_choices = model.random_block_choices()
-    x = torch.rand(2,3,224,224)
+    x = torch.rand(2,3,112,112)
     _ = model(x, block_choices, all_channel_mask)

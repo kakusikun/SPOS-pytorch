@@ -6,14 +6,19 @@ import random
 
 class SPOS(BaseGraph):
     def __init__(self, cfg):
-        super().__init__(cfg)
-        self.stage_repeats = [4, 4, 8, 4]
-        self.stage_out_channels = [64, 160, 320, 640]
+        self.strides = [2, 2, 2]
+        self.stage_repeats = [4, 4, 8]
+        self.stage_out_channels = [64, 160, 320]
         self.candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-        self.last_conv_out_channel = 1024  
+        self.last_conv_out_channel = 512  
+        super().__init__(cfg)
 
     def build(self):
         self.model = shufflenas_oneshot(
+            strides=self.strides,
+            stage_repeats=self.stage_repeats,
+            stage_out_channels=self.stage_out_channels,
+            last_conv_out_channel=self.last_conv_out_channel,
             n_class=self.cfg.DB.NUM_CLASSES,
             use_se=self.cfg.SPOS.USE_SE,
             last_conv_after_pooling=self.cfg.SPOS.LAST_CONV_AFTER_POOLING,
@@ -116,5 +121,31 @@ class SPOS(BaseGraph):
                     local_mask[j] = 1
                 channel_masks.append(local_mask)
                 
-        return torch.Tensor(channel_masks).expand(len(self.cfg.MODEL.GPU), sum(self.stage_repeats), global_max_length)
+        return torch.Tensor(channel_masks).expand(1 if len(self.cfg.MODEL.GPU) == 0 else len(self.cfg.MODEL.GPU), sum(self.stage_repeats), global_max_length)
 
+
+if __name__ == '__main__':
+    from src.factory.config_factory import _C as cfg
+    import torch
+    import numpy as np
+    import random
+
+    torch.manual_seed(42)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False  
+    np.random.seed(42)
+    random.seed(42)
+    
+    cfg.INPUT.RESIZE = (112, 112)
+    cfg.DB.NUM_CLASSES = 7
+    cfg.SPOS.USE_SE = True
+    cfg.SPOS.LAST_CONV_AFTER_POOLING = True
+    cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
+    graph = SPOS(cfg)
+
+    block_choice = [0, 0, 3, 1, 1, 1, 0, 0, 2, 0, 2, 1, 1, 0, 2, 0]
+    channel_choice = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+    channel_mask = graph.get_channel_masks(channel_choice)
+    x = torch.ones(2,3,112,112)
+    out = graph.model(x, block_choice, channel_mask)
+    print(out)
