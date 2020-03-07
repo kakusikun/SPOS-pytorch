@@ -140,6 +140,7 @@ class Evolution:
                             logger.info("Give up this generation for wasting too much time")
                             logger.info(g)
                         self.bad_generations.append(g)
+                        self._record_bad_generation()   
                         pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution()                     
                         g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
                         while g in self.bad_generations:
@@ -165,6 +166,7 @@ class Evolution:
         # prepare for next evolve
         self.parents = self.children[:self.parent_size]
         self.children = []
+
         return selected_child
 
     def forced_evolution(self):
@@ -227,7 +229,6 @@ class Evolution:
                     candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
         logger.info("[Evolution] Ends")
-        self._record_bad_generation()
 
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)
@@ -250,10 +251,10 @@ class Evolution:
 
     def _read_bad_generation(self):
         root = os.getcwd()
-        path = os.path.join(root, 'external/historical_bad_generations.txt')
+        path = os.path.join(root, 'external/spos_historical_bad_generations.txt')
         if os.path.exists(path):
             with open(path, 'r') as f:
-                for line in f.readline():
+                for line in f.readlines():
                     g = line.strip()
                     self.bad_generations.append(g)
 
@@ -526,10 +527,10 @@ if __name__ == "__main__":
     max_flops, pick_id, range_id, find_max_param = evolution.get_cur_evolve_state()
 
     if find_max_param:    
-        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(50, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[range_id],
                                 min_params=evolution.param_range[-1])
     else:   
-        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(50, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[0],
                                 min_params=evolution.param_range[range_id])
