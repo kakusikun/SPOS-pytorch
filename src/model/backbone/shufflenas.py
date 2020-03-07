@@ -67,7 +67,7 @@ class ShuffleNasOneShot(nn.Module):
                         input_channel,
                         output_channel,
                         stride=stride,
-                        max_channel_scale=self.candidate_scales[-1],
+                        channel_scales=self.candidate_scales,
                         use_se=block_use_se,
                         act_name=act_name)
                 ])
@@ -122,14 +122,14 @@ class ShuffleNasOneShot(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, x, block_choices, channel_masks):
+    def forward(self, x, block_choices, channel_choices):
         assert len(block_choices) == sum(self.stage_repeats) 
-        assert channel_masks.shape[1] == sum(self.stage_repeats)
+        assert len(channel_choices) == sum(self.stage_repeats)
         x = self.stem(x)
         block_idx = 0
         for m in self.features:
             if isinstance(m ,ShuffleNasBlock):
-                x = m(x, block_choices[block_idx], channel_masks.squeeze()[block_idx])
+                x = m(x, block_choices[block_idx], channel_choices[block_idx])
                 block_idx += 1
             else:
                 x = m(x)
@@ -196,17 +196,3 @@ def shufflenas_oneshot(
         stage_out_channels=stage_out_channels,
         candidate_scales=candidate_scales,
         last_conv_out_channel=last_conv_out_channel)
-
-
-if __name__ == '__main__':
-    model = shufflenas_oneshot(
-        n_class=10,
-        use_se=True,
-        last_conv_after_pooling=True,
-        channels_layout='OneShot'
-    )
-
-    all_channel_mask, choice = model.random_channel_mask(epoch_after_cs=1)
-    block_choices = model.random_block_choices()
-    x = torch.rand(2,3,112,112)
-    _ = model(x, block_choices, all_channel_mask)

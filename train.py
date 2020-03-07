@@ -60,9 +60,9 @@ def train_once(logger, epoch, graph, tdata, solver, pool=None, pool_lock=None, s
                 time.sleep(1)
 
         solver.zero_grad()
-        channel_masks = cand['channel_masks']
+        channel_choices = cand['channel_choices']
         block_choices = cand['block_choices']            
-        outputs = graph.model(batch['inp'], block_choices, channel_masks)
+        outputs = graph.model(batch['inp'], block_choices, channel_choices)
         loss, _ = graph.loss_head(outputs, batch)
         loss.backward()
         solver.step()
@@ -78,16 +78,15 @@ def train_once(logger, epoch, graph, tdata, solver, pool=None, pool_lock=None, s
 def test_once(logger, epoch, graph, vdata, bndata):
     block_choices = graph.random_block_choices()
     channel_choices = graph.random_channel_choices()
-    channel_masks = graph.get_channel_masks(channel_choices)
     raw_model_state = deepcopy(graph.model.state_dict())
-    recalc_bn(graph, block_choices, channel_masks, bndata, True)
+    recalc_bn(graph, block_choices, channel_choices, bndata, True)
     graph.model.eval()
     accus = []
     for batch in vdata:
         with torch.no_grad():
             for key in batch:
                 batch[key] = batch[key].cuda()
-            outputs = graph.model(batch['inp'], block_choices, channel_masks)
+            outputs = graph.model(batch['inp'], block_choices, channel_choices)
         accus.append((outputs.max(1)[1] == batch['target']).float().mean())
     accu = tensor_to_scalar(torch.stack(accus).mean())
     logger.info(f"Epoch [{epoch:03}]   Validation Accuracy [{accu:3.3f}]")

@@ -140,6 +140,7 @@ class Evolution:
                             logger.info("Give up this generation for wasting too much time")
                             logger.info(g)
                         self.bad_generations.append(g)
+                        self._record_bad_generation()   
                         pick_id, find_max_param, max_flops, max_params, min_params = self.forced_evolution()                     
                         g = f"{find_max_param}, {max_flops:.2f}, {max_params:.2f}, {min_params:.2f}"
                         while g in self.bad_generations:
@@ -165,6 +166,7 @@ class Evolution:
         # prepare for next evolve
         self.parents = self.children[:self.parent_size]
         self.children = []
+
         return selected_child
 
     def forced_evolution(self):
@@ -224,10 +226,8 @@ class Evolution:
                         logger=logger
                     )
                 with lock:
-                    candidate['channel_masks'] = self.graph.get_channel_masks(candidate['channel_choices'])
                     pool.append(candidate)
         logger.info("[Evolution] Ends")
-        self._record_bad_generation()
 
     def set_flops_params_bound(self):
         block_choices = [3] * sum(self.graph.stage_repeats)
@@ -250,10 +250,10 @@ class Evolution:
 
     def _read_bad_generation(self):
         root = os.getcwd()
-        path = os.path.join(root, 'external/historical_bad_generations.txt')
+        path = os.path.join(root, 'external/spos_historical_bad_generations.txt')
         if os.path.exists(path):
             with open(path, 'r') as f:
-                for line in f.readline():
+                for line in f.readlines():
                     g = line.strip()
                     self.bad_generations.append(g)
 
@@ -310,9 +310,9 @@ class SearchEvolution:
             self.logger.info("Population Built")
         return population
 
-    def _get_choice_accuracy(self, block_choices, channel_masks):
+    def _get_choice_accuracy(self, block_choices, channel_choices):
         self.graph.model.train()
-        recalc_bn(self.graph, block_choices, channel_masks, self.bndata, True, self.bn_recalc_imgs)
+        recalc_bn(self.graph, block_choices, channel_choices, self.bndata, True, self.bn_recalc_imgs)
         self.graph.model.eval()
         accus = []
         start = time.time()
@@ -322,7 +322,7 @@ class SearchEvolution:
             with torch.no_grad():
                 for key in batch:
                     batch[key] = batch[key].cuda()
-                outputs = self.graph.model(batch['inp'], block_choices, channel_masks)
+                outputs = self.graph.model(batch['inp'], block_choices, channel_choices)
             accus.append((outputs.max(1)[1] == batch['target']).float().mean())
             print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter                      ", end='')
         print("")
@@ -345,8 +345,7 @@ class SearchEvolution:
                 if self.logger and i % 50 == 0:
                     self.logger.info(f"Growing    Search [{search_iter:03}]    Step [{i:03}]    Duration [{(time.time()-start)/60:.2f}]s")
 
-                channel_masks = self.graph.get_channel_masks(instance['channel'])
-                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                acc = self._get_choice_accuracy(instance['block'], instance['channel'])
                 instance['error'] = 1 - acc
                 temp = (
                     deepcopy(instance['error']), 
@@ -401,8 +400,7 @@ class SearchEvolution:
     def evolve_paper(self, population, leader_board, search_iter):
         for instance in population:
             if 'error' not in instance:
-                channel_masks = self.graph.get_channel_masks(instance['channel'])
-                acc = self._get_choice_accuracy(instance['block'], channel_masks)
+                acc = self._get_choice_accuracy(instance['block'], instance['channel'])
                 instance['error'] = 1 - acc
                 temp = (
                     1 - deepcopy(instance['error']), 
@@ -475,7 +473,7 @@ class SearchEvolution:
 def make_divisible(x, divisible_by=8):
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
 
-def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_imgs=20000):
+def recalc_bn(graph, block_choices, channel_choices, bndata, use_gpu, bn_recalc_imgs=20000):
     count = 0
     start = time.time()
     msg = "BN Updating"
@@ -483,7 +481,7 @@ def recalc_bn(graph, block_choices, channel_masks, bndata, use_gpu, bn_recalc_im
         iter_start = time.time()
         if use_gpu:
             img = batch['inp'].cuda()
-        graph.model(img, block_choices, channel_masks)
+        graph.model(img, block_choices, channel_choices)
 
         count += img.size(0)        
         print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter    [{count / bn_recalc_imgs * 100:.2f}]%", end='')
@@ -526,10 +524,10 @@ if __name__ == "__main__":
     max_flops, pick_id, range_id, find_max_param = evolution.get_cur_evolve_state()
 
     if find_max_param:    
-        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(50, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[range_id],
                                 min_params=evolution.param_range[-1])
     else:   
-        candidate = evolution.evolve(1, pick_id, find_max_param, max_flops,
+        candidate = evolution.evolve(50, pick_id, find_max_param, max_flops,
                                 max_params=evolution.param_range[0],
                                 min_params=evolution.param_range[range_id])
