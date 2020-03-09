@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 CHOICE = {
     'channel': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    'block': [0, 1, 2, 3]
+    'block': [0, 3]
 }
 
 class Evolution:
@@ -325,8 +325,8 @@ class SearchEvolution:
                 outputs = self.graph.model(batch['inp'], block_choices, channel_choices)
             accus.append((outputs.max(1)[1] == batch['target']).float().mean())
             print("\r  ------------------ " + f"{msg:<20} [{time.time()-start:.2f}]s    [{time.time()-iter_start:.2f}]s/iter                      ", end='')
-        print("")
         accu = tensor_to_scalar(torch.stack(accus).mean())
+        print(f"  ------------------ {accu:.4f}")
         return accu
 
     def born(self, father, mother):
@@ -457,7 +457,7 @@ class SearchEvolution:
         root = os.path.join(os.getcwd(), "external")
         if not os.path.exists(root):
             os.makedirs(root)
-        path = os.path.join(root, f"spos_search_history_{search_iter:03}.json")
+        path = os.path.join(self.cfg.OUTPUT_DIR, f"spos_search_history_{search_iter:03}.json")
         with open(path, 'w') as f:
             json.dump(self.history, f)
 

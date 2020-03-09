@@ -6,7 +6,7 @@ import random
 
 class SPOS(BaseGraph):
     def __init__(self, cfg):
-        self.strides = [2, 2, 2]
+        self.strides = [2, 2, 1]
         self.stage_repeats = [4, 4, 8]
         self.stage_out_channels = [64, 160, 320]
         self.candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
