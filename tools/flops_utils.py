@@ -68,7 +68,7 @@ def make_OneShot_flops_table(
     stage_repeats = [4, 4, 8, 4]
     stage_out_channels = [64, 160, 320, 640]
     channel_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0] 
-    block_choices = [0, 3]
+    block_choices = [0, 1, 2, 3]
 
     lookup_table = dict()
     lookup_table['config'] = dict()
@@ -128,35 +128,32 @@ def make_OneShot_flops_table(
                 for channel_choice, scale in enumerate(channel_scales):     
                     local_mask = [0] * global_max_length
                     mid_channel = make_divisible(int(output_channel // 2 * scale))
-                    for j in range(mid_channel):
-                        local_mask[j] = 1
-                        local_mask = torch.Tensor(local_mask)
                     # SNB 3x3
                     if block_choice == 0:
-                        block = ShuffleNetCSBlock(
+                        block = ShufflenetCS(
                             input_channel, output_channel, mid_channel,
-                            3, stride, 'ShuffleNetV2', act_name=act_name, use_se=block_use_se)
+                            3, stride, activation=act_name, useSE=block_use_se)
                     if block_choice == 1:
-                        block = ShuffleNetCSBlock(
+                        block = ShufflenetCS(
                             input_channel, output_channel, mid_channel,
-                            5, stride, 'ShuffleNetV2', act_name=act_name, use_se=block_use_se)
+                            5, stride, activation=act_name, useSE=block_use_se)
                     if block_choice == 2:
-                        block = ShuffleNetCSBlock(
+                        block = ShufflenetCS(
                             input_channel, output_channel, mid_channel,
-                            7, stride, 'ShuffleNetV2', act_name=act_name, use_se=block_use_se)
+                            7, stride, activation=act_name, useSE=block_use_se)
                     if block_choice == 3:
-                        block = ShuffleNetCSBlock(
+                        block = ShuffleXceptionCS(
                             input_channel, output_channel, mid_channel,
-                            3, stride, 'ShuffleXception', act_name=act_name, use_se=block_use_se)
+                            stride, activation=act_name, useSE=block_use_se)
                     # fill the table
                     choice_id = f"{block_idx}-{block_choice}-{channel_choice}"
-                    block_flops, block_params = profile(block, inputs=(inp, local_mask), custom_ops={HardSwish:count_hs})
+                    block_flops, block_params = profile(block, inputs=(inp,), custom_ops={HardSwish:count_hs})
                     lookup_table['flops']['nas_block'][choice_id] = block_flops / 1e6
                     lookup_table['params']['nas_block'][choice_id] = block_params / 1e6
             if stride == 2:
                 input_size //= 2
             block.eval()
-            inp = block(inp, torch.ones(global_max_length))
+            inp = block(inp)
             input_channel = output_channel
             block_idx += 1
     
@@ -215,10 +212,22 @@ def make_OneShot_flops_table(
         json.dump(lookup_table, f)
 
 if __name__ == '__main__':
-    make_OneShot_flops_table(
-        input_size=224, 
-        n_class=10, 
+    lookup_table = get_flops_table(
+        input_size=112, 
+        n_class=7, 
         use_se=True,
         last_conv_after_pooling=True,
-        last_conv_out_channel=1024
+        last_conv_out_channel=512
     )
+
+    # root = os.getcwd()
+    # file_path = os.path.join(root, 'external/OneShot_flops.json')   
+  
+    # with open(file_path, 'r') as f:
+    #     lookup_table = json.load(f)
+    # block_choice = [3,0,3,0,0,3,3,0,3,0,3,0,3,0,0,3]
+    block_choice = [0, 0, 3, 1, 1, 1, 0, 0, 2, 0, 2, 1, 1, 0, 2, 0]
+    # channel_choice = [8,1,5,0,1,8,5,6,6,6,3,8,3,8,1,1]
+    channel_choice = [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    flops, param = get_flop_params(block_choice, channel_choice, lookup_table)
+    print(flops, param)
