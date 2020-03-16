@@ -1,8 +1,10 @@
 from src.database.data.emotion import Emotion
+from src.database.data.tinyimagenet import TinyImageNet
 
 class DataFactory:
     products = {
-        'emotion': Emotion
+        'emotion': Emotion,
+        'tinyimagenet': TinyImageNet
     }
 
     @classmethod

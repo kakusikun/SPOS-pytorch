@@ -4,26 +4,21 @@ from tools.spos_utils import make_divisible
 from src.model.module.loss_module import CrossEntropyLossLS
 import random
 
-class SPOS(BaseGraph):
+class SPOSShuffleNetv2(BaseGraph):
     def __init__(self, cfg):
-        self.strides = [2, 2, 2]
-        self.stage_repeats = [8,8,8]
-        self.stage_out_channels = [64, 160, 320]
+        self.strides = [1, 1, 2, 2, 2]
+        self.stage_repeats = [4,8,4]
+        self.stage_out_channels = [24, 116, 232, 464]
         self.candidate_scales = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-        self.last_conv_out_channel = 512  
         self._generate_block_candidates()
         super().__init__(cfg)
 
     def build(self):
-        self.model = shufflenas_oneshot(
+        self.model = ShuffleNetv2Nas(
             strides=self.strides,
             stage_repeats=self.stage_repeats,
             stage_out_channels=self.stage_out_channels,
-            last_conv_out_channel=self.last_conv_out_channel,
-            n_class=self.cfg.DB.NUM_CLASSES,
-            use_se=self.cfg.SPOS.USE_SE,
-            last_conv_after_pooling=self.cfg.SPOS.LAST_CONV_AFTER_POOLING,
-            channels_layout=self.cfg.SPOS.CHANNELS_LAYOUT)
+            n_class=self.cfg.DB.NUM_CLASSES)
     
         self.crit = {}
         self.crit['cels'] = CrossEntropyLossLS(self.cfg.DB.NUM_CLASSES)
@@ -40,9 +35,9 @@ class SPOS(BaseGraph):
         for num_repeats in self.stage_repeats:
             for i in range(num_repeats):
                 if i == 0:
-                    self.block_choices.append([1,2])
+                    self.block_choices.append([1])
                 else:
-                    self.block_choices.append([0,1,2])
+                    self.block_choices.append([0,1])
 
     def random_block_choices(self):
         block_number = sum(self.stage_repeats)
@@ -117,12 +112,12 @@ if __name__ == '__main__':
     np.random.seed(42)
     random.seed(42)
     
-    cfg.INPUT.RESIZE = (112, 112)
-    cfg.DB.NUM_CLASSES = 7
-    cfg.SPOS.USE_SE = True
-    cfg.SPOS.LAST_CONV_AFTER_POOLING = True
-    cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
-    graph = SPOS(cfg)
+    cfg.INPUT.RESIZE = (64, 64)
+    cfg.DB.NUM_CLASSES = 200
+    # cfg.SPOS.USE_SE = True
+    # cfg.SPOS.LAST_CONV_AFTER_POOLING = True
+    # cfg.SPOS.CHANNELS_LAYOUT = "OneShot"
+    graph = SPOSShuffleNetv2(cfg)
 
     for m in graph.model.modules():
         if hasattr(m, 'copy_weight'):

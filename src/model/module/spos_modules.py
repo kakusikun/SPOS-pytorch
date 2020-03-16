@@ -2,15 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from src.model.module.base_module import SEModule
-
-class HardSwish(nn.Module):
-    def __init__(self):
-        super(HardSwish, self).__init__()
-
-    def forward(self, x, **kwargs):
-        clip = torch.clamp(x + 3, 0, 6) / 6
-        return x * clip
+from src.model.module.base_module import (
+    ConvModule,
+    SEModule,
+    HSwish,
+)
 
 class ShufflenetCS(nn.Module):
     def __init__(self, inp, oup, base_mid_channels, ksize, stride, activation='relu', useSE=False, affine=False):
@@ -47,8 +43,8 @@ class ShufflenetCS(nn.Module):
             branch_main[2] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[2] = HardSwish()
-            branch_main[-1] = HardSwish()
+            branch_main[2] = HSwish()
+            branch_main[-1] = HSwish()
             if useSE:
                 branch_main.append(SEModule(self.ouc))
         self.branch_main = nn.Sequential(*branch_main)
@@ -66,7 +62,7 @@ class ShufflenetCS(nn.Module):
             if activation == 'relu':
                 branch_proj[-1] = nn.ReLU(inplace=True)
             else:
-                branch_proj[-1] = HardSwish()
+                branch_proj[-1] = HSwish()
             self.branch_proj = nn.Sequential(*branch_proj)
         else:
             self.branch_proj = None
@@ -125,9 +121,9 @@ class ShuffleXceptionCS(nn.Module):
             branch_main[9] = nn.ReLU(inplace=True)
             branch_main[-1] = nn.ReLU(inplace=True)
         else:
-            branch_main[4] = HardSwish()
-            branch_main[9] = HardSwish()
-            branch_main[-1] = HardSwish()
+            branch_main[4] = HSwish()
+            branch_main[9] = HSwish()
+            branch_main[-1] = HSwish()
         assert None not in branch_main
 
         if useSE:
@@ -149,7 +145,7 @@ class ShuffleXceptionCS(nn.Module):
             if activation == 'relu':
                 branch_proj[-1] = nn.ReLU(inplace=True)
             else:
-                branch_proj[-1] = HardSwish()
+                branch_proj[-1] = HSwish()
             self.branch_proj = nn.Sequential(*branch_proj)
 
     def forward(self, old_x):
@@ -159,6 +155,56 @@ class ShuffleXceptionCS(nn.Module):
         elif self.stride==2:
             x_proj = old_x
             x = old_x
+            return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
+
+class ShuffleBlock(nn.Module):
+    def __init__(self, inc, midc, ouc, ksize, stride, 
+        activation, useSE, affine, mode):
+        super(ShuffleBlock, self).__init__()
+        self.stride = stride
+        pad = ksize // 2
+        inc = inc // 2 if stride == 1 else inc
+
+        if mode == 'v2':
+            branch_main = [
+                ConvModule(inc, midc, 1, activation=activation, affine=affine),
+                ConvModule(midc, midc, ksize, stride=stride, padding=pad, groups=midc, activation='linear', affine=affine),
+                ConvModule(midc, ouc - inc, 1, activation=activation, affine=affine),
+            ]
+        elif mode == 'xception':
+            assert ksize == 3
+            branch_main = [
+                ConvModule(inc, inc, 3, stride=stride, padding=1, groups=inc, activation='linear', affine=affine),
+                ConvModule(inc, midc, 1, activation=activation, affine=affine),
+                ConvModule(midc, midc, 3, stride=1, padding=1, groups=midc, activation='linear', affine=affine),
+                ConvModule(midc, midc, 1, activation=activation, affine=affine),
+                ConvModule(midc, midc, 3, stride=1, padding=1, groups=midc, activation='linear', affine=affine),
+                ConvModule(midc, ouc - inc, 1, activation=activation, affine=affine),
+            ]
+        else:
+            raise TypeError
+        
+        if activation == 'relu':
+            assert useSE == False
+        else:
+            if useSE:
+                branch_main.append(SEModule(ouc - inc))
+        self.branch_main = nn.Sequential(*branch_main)
+
+        if stride == 2:
+            self.branch_proj = nn.Sequential(
+                ConvModule(inc, inc, ksize, stride=stride, padding=pad, groups=inc, activation='linear', affine=affine),
+                ConvModule(inc, inc, 1, activation=activation, affine=affine),
+            )
+        else:
+            self.branch_proj = None
+
+    def forward(self, x):
+        if self.stride==1:
+            x_proj, x = channel_shuffle(x)
+            return torch.cat((x_proj, self.branch_main(x)), 1)
+        elif self.stride==2:
+            x_proj = x
             return torch.cat((self.branch_proj(x_proj), self.branch_main(x)), 1)
 
 def channel_shuffle(x):
@@ -176,14 +222,14 @@ class ShuffleNetCSBlock(nn.Module):
         channel_scales, 
         ksize, 
         stride, 
-        block_mode='ShuffleNetV2', 
+        block_mode='v2', 
         act_name='relu', 
         use_se=False, 
         **kwargs):
         super(ShuffleNetCSBlock, self).__init__()
         assert stride in [1, 2]
         assert ksize in [3, 5, 7]
-        assert block_mode in ['ShuffleNetV2', 'ShuffleXception']
+        assert block_mode in ['v2', 'xception']
 
         self.stride = stride
         self.ksize = ksize
@@ -208,36 +254,37 @@ class ShuffleNetCSBlock(nn.Module):
         """
         self.block = nn.ModuleList()
         for i in range(len(channel_scales)):
-            mid_channel = make_divisible(int(output_channel // 2 * channel_scales[i]))
-            if block_mode == 'ShuffleNetV2':
-                self.block.append(ShufflenetCS(
-                    self.input_channel, 
-                    self.output_channel, 
-                    mid_channel,
-                    ksize=ksize,
-                    stride=stride,
-                    activation=act_name,
-                    useSE=use_se,
-                    affine=False
-                ))
-            elif block_mode == 'ShuffleXception':
-                self.block.append(ShuffleXceptionCS(
-                    self.input_channel, 
-                    self.output_channel, 
-                    mid_channel,
-                    stride=stride,
-                    activation=act_name,
-                    useSE=use_se,
-                    affine=False
-                ))
+            # mid_channel = make_divisible(int(output_channel // 2 * channel_scales[i]))
+            mid_channel = int(output_channel // 2 * channel_scales[i])
+            self.block.append(ShuffleBlock(
+                self.input_channel, 
+                mid_channel,
+                self.output_channel, 
+                ksize=ksize,
+                stride=stride,
+                activation=act_name,
+                useSE=use_se,
+                affine=False,
+                mode=block_mode
+            ))
+
     def forward(self, x, channel_choice):
         return self.block[channel_choice](x)
+
+    def copy_weight(self):
+        src_weight = self.block[-1].state_dict()
+        for trt_module in self.block[:-1]:
+            trt_weight = trt_module.state_dict()
+            for w_name in trt_weight:
+                if trt_weight[w_name].dim() > 0:
+                    n_c = trt_weight[w_name].size(0)
+                    trt_weight[w_name] = src_weight[w_name][:n_c,...]
 
 class ShuffleNasBlock(nn.Module):
     def __init__(self, 
         input_channel, 
         output_channel, 
-        stride, 
+        stride,
         channel_scales, 
         act_name='relu', 
         use_se=False):
@@ -246,17 +293,22 @@ class ShuffleNasBlock(nn.Module):
         """
         Four pre-defined blocks
         """
-        self.block_sn_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
-                                                3, stride, 'ShuffleNetV2', act_name=act_name, use_se=use_se)
-        self.block_sx_3x3 = ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
-                                                3, stride, 'ShuffleXception', act_name=act_name, use_se=use_se)
+        self.nas_block = nn.ModuleList()
+
+        self.nas_block.append(
+            nn.Sequential()
+        )
+        self.nas_block.append(
+            ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
+            3, stride, block_mode='v2', act_name=act_name, use_se=use_se)
+        )
+        self.nas_block.append(
+            ShuffleNetCSBlock(input_channel, output_channel, channel_scales,
+            3, stride, block_mode='xception', act_name=act_name, use_se=use_se)
+        )
 
     def forward(self, x, block_choice, channel_choice):
-        # ShuffleNasBlock has three inputs and passes two inputs to the ShuffleNetCSBlock
-        if block_choice == 0:
-            x = self.block_sn_3x3(x, channel_choice)
-        elif block_choice == 3:
-            x = self.block_sx_3x3(x, channel_choice)
+        x = self.nas_block[block_choice](x, channel_choice)
         return x
 
 def make_divisible(x, divisible_by=8):

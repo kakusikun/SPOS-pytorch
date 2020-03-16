@@ -16,7 +16,8 @@ from src.factory.config_factory import build_output
 from tools.logger import setup_logger
 from tools.utils import deploy_macro, print_config
 
-from src.graph.spos import SPOS
+# from src.graph.spos import SPOS
+from src.graph.spos_shufflenetv2 import SPOSShuffleNetv2
 from tools.spos_utils import Evolution, recalc_bn
 from src.factory.loader_factory import LoaderFactory
 from src.solver.solver import Solver
@@ -111,7 +112,7 @@ def main():
 
     loader = LoaderFactory.produce(cfg)
 
-    graph = SPOS(cfg)
+    graph = SPOSShuffleNetv2(cfg)
     evolution = Evolution(
         cfg=cfg,
         graph=graph,

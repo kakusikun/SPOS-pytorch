@@ -6,8 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from src.model.module.spos_modules import HardSwish, ShuffleNasBlock
-from src.model.module.base_module import SEModule
+from src.model.module.spos_modules import ShuffleNasBlock
+from src.model.module.base_module import SEModule, HSwish
 from tools.spos_utils import make_divisible
 
 class ShuffleNasOneShot(nn.Module):
@@ -43,7 +43,7 @@ class ShuffleNasOneShot(nn.Module):
                 padding=1,
                 bias=False),
             nn.BatchNorm2d(input_channel, affine=False),
-            HardSwish()
+            HSwish()
         )
 
         features = []
@@ -82,7 +82,7 @@ class ShuffleNasOneShot(nn.Module):
                 nn.Conv2d(input_channel, self.last_conv_out_channel, kernel_size=1, stride=1,
                             padding=0, bias=True),
                 # No bn for the conv after pooling
-                HardSwish()
+                HSwish()
             ])
         else:
             if self.use_se:
@@ -92,14 +92,14 @@ class ShuffleNasOneShot(nn.Module):
                                 kernel_size=1, stride=1,
                                 padding=0, bias=False),
                     nn.BatchNorm2d(make_divisible(self.last_conv_out_channel * 0.75), affine=False),
-                    HardSwish(),
+                    HSwish(),
                     nn.AdaptiveAvgPool2d(1),
                     SEModule(make_divisible(self.last_conv_out_channel * 0.75)),
                     nn.Conv2d(self.last_conv_out_channel, make_divisible(self.last_conv_out_channel * 0.75),
                                 kernel_size=1, stride=1,
                                 padding=0, bias=True),
                     # No bn for the conv after pooling
-                    HardSwish()
+                    HSwish()
                 ])
             else:
                 # original Oneshot Nas approach
